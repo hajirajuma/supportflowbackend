@@ -127,8 +127,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 // ============================================================================
 
 async function seedPlatformAdmin() {
-  const email = 'admin@supportflow.com';
-  const password = 'Admin@123456';
+  const email = "ADMIN_EMAIL"
+  const password = "ADMIN_PASSWORD"
   const hashedPassword = await bcrypt.hash(password, 12);
 
   const existingAdmin = await prisma.user.findFirst({ where: { email } });
