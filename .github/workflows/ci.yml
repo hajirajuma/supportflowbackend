@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint, Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/supportflow_test
+      JWT_SECRET: ${{ secrets.JWT_SECRET != '' && secrets.JWT_SECRET || 'ci-only-secret-that-is-at-least-thirty-two-characters-long!!' }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET != '' && secrets.JWT_REFRESH_SECRET || 'ci-only-refresh-secret-that-is-at-least-thirty-two-characters-long!!' }}
+      BREVO_API_KEY: ci-bypass-key
+      EMAIL_FROM: noreply@supportflow.test
+      FRONTEND_URL: http://localhost:3000
+      SUPABASE_URL: https://ci.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: pk-ci
+      SUPABASE_SECRET_KEY: sk-ci
+      SUPABASE_BUCKET: supportflow
+      PAYCHANGU_ENV: sandbox
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma schema validation
+        run: npx prisma validate
+
+      - name: Lint
+        run: npm run lint -- --no-fix
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test -- --silent
+
+      - name: E2E tests
+        run: npm run test:e2e

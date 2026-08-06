@@ -1,0 +1,2038 @@
+// ============================================================================
+// SupportFlow — Multi-Tenant Client Feedback & Support Portal
+// ============================================================================
+// Production-ready Prisma schema.
+//
+// This schema is the single source of truth. It was reconciled against the
+// application code (which was previously drifting): models, fields and enum
+// values below are exactly what the NestJS services read and write.
+//
+// Conventions:
+//   * Every model uses `String @id @default(cuid())`.
+//   * Every model carries `createdAt` / `updatedAt` audit timestamps.
+//   * Every tenant-scoped model carries `organizationId` + an Organization
+//     relation. Platform-level records (system settings, platform templates,
+//     global announcements) intentionally have `organizationId` nullable.
+//   * FK/status/email/timestamp columns are indexed for tenant-isolated reads.
+//   * Referential actions are explicit: tenant deletion cascades, while
+//     history/audit rows use SetNull to stay immutable.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================================================
+// ENUMS
+// ==================================================
+
+enum UserRole {
+  PLATFORM_ADMIN
+  TENANT_OWNER
+  SUPPORT_AGENT
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  TRIAL
+  TRIAL_EXPIRED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  ON_HOLD
+  ESCALATED
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketSource {
+  PORTAL
+  EMAIL
+  API
+  PHONE
+  CHAT
+}
+
+enum TicketReplyType {
+  CUSTOMER
+  AGENT
+  INTERNAL_NOTE
+}
+
+enum TicketActivityType {
+  CREATED
+  UPDATED
+  ASSIGNED
+  UNASSIGNED
+  REASSIGNED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  REPLY_ADDED
+  NOTE_ADDED
+  ATTACHMENT_ADDED
+  ATTACHMENT_DELETED
+  TAG_ADDED
+  TAG_REMOVED
+  WATCHER_ADDED
+  WATCHER_REMOVED
+  CUSTOMER_REPLY
+  REPLY_UPDATED
+  REPLY_DELETED
+  TICKET_DELETED
+  MERGED
+  SPLIT
+  REOPENED
+  CLOSED
+  FEEDBACK_SUBMITTED
+  EVIDENCE_UPLOADED
+  SLA_BREACHED
+  SLA_WARNING
+}
+
+enum FeedbackFormStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum FeedbackQuestionType {
+  SHORT_TEXT
+  LONG_TEXT
+  EMAIL
+  NUMBER
+  DATE
+  MULTIPLE_CHOICE
+  CHECKBOX
+  DROPDOWN
+  RATING
+  YES_NO
+  PHONE
+  FILE_UPLOAD
+}
+
+enum FeedbackResponseStatus {
+  SUBMITTED
+  EDITED
+}
+
+enum FeedbackRequestStatus {
+  PENDING
+  OPENED
+  COMPLETED
+  EXPIRED
+}
+
+enum NotificationType {
+  INVITATION_RECEIVED
+  INVITATION_SENT
+  INVITATION_ACCEPTED
+  USER_REGISTERED
+  USER_LOGGED_IN
+  PASSWORD_CHANGED
+  EMAIL_VERIFIED
+  EMAIL_VERIFICATION
+  LOGIN_ALERT
+  SECURITY_ALERT
+  TICKET_CREATED
+  TICKET_UPDATED
+  TICKET_ASSIGNED
+  TICKET_REASSIGNED
+  TICKET_RESOLVED
+  TICKET_CLOSED
+  TICKET_REOPENED
+  TICKET_REPLY
+  TICKET_REPLIED
+  TICKET_MENTION
+  TICKET_MENTIONED
+  FEEDBACK_REQUEST
+  FEEDBACK_REMINDER
+  FEEDBACK_RESPONSE
+  FEEDBACK_SUBMITTED
+  NEGATIVE_FEEDBACK
+  FEEDBACK_EXPIRED
+  INVITATION
+  SYSTEM_ANNOUNCEMENT
+  ORGANIZATION_UPDATED
+  SUBSCRIPTION_EXPIRY
+  SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_EXPIRED
+  SUBSCRIPTION_RENEWAL
+  SUBSCRIPTION_ACTIVATED
+  SUBSCRIPTION_RENEWED
+  SUBSCRIPTION_CANCELLED
+  TRIAL_STARTED
+  TRIAL_ENDING
+  TRIAL_EXPIRED
+  PAYMENT_INITIATED
+  PAYMENT_SUCCESSFUL
+  PAYMENT_FAILED
+  USAGE_LIMIT_REACHED
+  STORAGE_ALMOST_FULL
+  UPGRADE_AVAILABLE
+  INVOICE_GENERATED
+  PLAN_CHANGED
+  ANNOUNCEMENT
+  SYSTEM_MAINTENANCE
+  SYSTEM
+  PASSWORD_RESET
+  USER_MENTION
+  EVIDENCE_UPLOADED
+  KNOWLEDGE_ARTICLE_PUBLISHED
+  SLA_BREACHED
+  SLA_WARNING
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  BOTH
+  WEBSOCKET
+  SMS
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+enum NotificationTemplateStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  EXPIRED
+  CANCELLED
+}
+
+enum AnnouncementAudience {
+  ALL
+  ORGANIZATION_OWNERS
+  ORGANIZATION_ADMINS
+  AGENTS
+  CUSTOMERS
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  CREATE
+  UPDATE
+  DELETE
+  ROLE_CHANGE
+  INVITATION_SENT
+  INVITATION_ACCEPTED
+  PASSWORD_RESET
+  EMAIL_VERIFIED
+  EMAIL_VERIFICATION
+  SUBSCRIPTION_CHANGE
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_CHANGED
+  SUBSCRIPTION_CANCELLED
+  TICKET_UPDATE
+  TICKET_ASSIGNMENT
+  USER_SUSPENDED
+  USER_ACTIVATED
+  ORGANIZATION_UPDATE
+  SETTINGS_UPDATE
+  API_KEY_GENERATED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  PROFILE_UPDATE
+  PASSWORD_CHANGED
+  AVATAR_UPDATE
+  NOTIFICATION_READ
+  NOTIFICATION_DELETED
+  NOTIFICATION_ARCHIVED
+  NOTIFICATION_RESTORED
+  NOTIFICATION_CREATED
+  EMAIL_SENT
+  EMAIL_FAILED
+  BROADCAST_SENT
+  ANNOUNCEMENT_PUBLISHED
+  FEEDBACK_REQUEST_CREATED
+  FEEDBACK_SUBMITTED
+  FEEDBACK_UPDATED
+  FEEDBACK_EXPIRED
+  FEEDBACK_VIEWED
+  PLAN_CREATED
+  PLAN_UPDATED
+  PAYMENT_INITIATED
+  PAYMENT_COMPLETED
+  PAYMENT_FAILED
+  WEBHOOK_RECEIVED
+  INVOICE_GENERATED
+  USAGE_LIMIT_REACHED
+  EXPORT_DATA
+  EVIDENCE_UPLOADED
+  EVIDENCE_DELETED
+  KNOWLEDGE_ARTICLE_CREATED
+  KNOWLEDGE_ARTICLE_UPDATED
+  KNOWLEDGE_ARTICLE_DELETED
+  SLA_POLICY_CREATED
+  SLA_POLICY_UPDATED
+  SLA_POLICY_DELETED
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PRO
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  PENDING
+  TRIALING
+  ACTIVE
+  PENDING_PAYMENT
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum PaymentProvider {
+  PAYCHANGU
+  STRIPE
+  FLUTTERWAVE
+}
+
+enum PaymentStatus {
+  PENDING
+  INITIATED
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  REFUNDED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  VOID
+  CANCELLED
+}
+
+enum FileType {
+  IMAGE
+  DOCUMENT
+  SPREADSHEET
+  ARCHIVE
+  VIDEO
+  OTHER
+}
+
+enum EvidenceType {
+  IMAGE
+  DOCUMENT
+  VIDEO
+  AUDIO
+  OTHER
+}
+
+enum KnowledgeArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeArticleVisibility {
+  PUBLIC
+  PRIVATE
+  INTERNAL
+}
+
+enum SLAStatus {
+  ACTIVE
+  INACTIVE
+  PAUSED
+}
+
+enum SLAPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum BusinessHoursType {
+  STANDARD
+  CUSTOM
+}
+
+enum HolidayType {
+  PUBLIC
+  COMPANY
+  RELIGIOUS
+}
+
+enum ThemeMode {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum Language {
+  EN
+  ES
+  FR
+  DE
+  IT
+  PT
+  NL
+  RU
+  ZH
+  JA
+  KO
+  AR
+  HI
+}
+
+enum PermissionCode {
+  // User Management
+  USER_CREATE
+  USER_READ
+  USER_UPDATE
+  USER_DELETE
+  USER_SUSPEND
+  USER_ACTIVATE
+
+  // Role Management
+  ROLE_CREATE
+  ROLE_READ
+  ROLE_UPDATE
+  ROLE_DELETE
+  ROLE_ASSIGN
+
+  // Department Management
+  DEPARTMENT_CREATE
+  DEPARTMENT_READ
+  DEPARTMENT_UPDATE
+  DEPARTMENT_DELETE
+  DEPARTMENT_MANAGE_MEMBERS
+
+  // Ticket Management
+  TICKET_CREATE
+  TICKET_READ
+  TICKET_UPDATE
+  TICKET_DELETE
+  TICKET_ASSIGN
+  TICKET_RESOLVE
+  TICKET_CLOSE
+  TICKET_MERGE
+  TICKET_SPLIT
+  TICKET_VIEW_ALL
+  TICKET_VIEW_OWN
+
+  // Evidence Management
+  EVIDENCE_UPLOAD
+  EVIDENCE_READ
+  EVIDENCE_DELETE
+
+  // Feedback Management
+  FEEDBACK_CREATE
+  FEEDBACK_READ
+  FEEDBACK_UPDATE
+  FEEDBACK_DELETE
+  FEEDBACK_FORM_CREATE
+  FEEDBACK_FORM_READ
+  FEEDBACK_FORM_UPDATE
+  FEEDBACK_FORM_DELETE
+  FEEDBACK_VIEW_ALL
+
+  // Knowledge Base
+  KNOWLEDGE_READ
+  KNOWLEDGE_CREATE
+  KNOWLEDGE_UPDATE
+  KNOWLEDGE_DELETE
+  KNOWLEDGE_PUBLISH
+
+  // SLA Management
+  SLA_CREATE
+  SLA_READ
+  SLA_UPDATE
+  SLA_DELETE
+  SLA_VIEW_ALL
+
+  // Organization Settings
+  SETTINGS_READ
+  SETTINGS_UPDATE
+  SUBSCRIPTION_READ
+  SUBSCRIPTION_UPDATE
+  SUBSCRIPTION_CANCEL
+
+  // Reporting
+  REPORT_READ
+  REPORT_EXPORT
+
+  // Audit
+  AUDIT_LOG_READ
+
+  // API
+  API_KEY_CREATE
+  API_KEY_READ
+  API_KEY_REVOKE
+
+  // System
+  SYSTEM_SETTINGS_UPDATE
+  ANNOUNCEMENT_CREATE
+  ANNOUNCEMENT_UPDATE
+  ANNOUNCEMENT_DELETE
+}
+
+// ==================================================
+// ORGANIZATION & USERS
+// ==================================================
+
+model Organization {
+  id                   String               @id @default(cuid())
+  name                 String
+  slug                 String               @unique
+  subdomain            String               @unique
+  customDomain         String?              @unique
+  tenantKey            String               @unique
+  website              String?
+  logo                 String?
+  billingEmail         String?
+  timezone             String               @default("UTC")
+  locale               String               @default("en-US")
+  status               OrganizationStatus   @default(ACTIVE)
+  isVerified           Boolean              @default(false)
+  inviteCode           String?              @unique
+  inviteLink           String?              @unique
+  metadata             Json?
+  currentSubscriptionId String?
+  trialEndsAt          DateTime?
+  deletedAt            DateTime?
+  deletedById          String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  settings             OrganizationSettings?
+  users                User[]
+  departments          Department[]
+  tickets              Ticket[]
+  feedbackForms        FeedbackForm[]
+  feedbackResponses    FeedbackResponse[]
+  feedbackRequests     FeedbackRequest[]
+  notifications        Notification[]
+  invitations          Invitation[]
+  auditLogs            AuditLog[]
+  subscriptions        OrganizationSubscription[]
+  usageRecords         UsageRecord[]
+  fileUploads          FileUpload[]
+  loginHistory         LoginHistory[]
+  apiKeys              ApiKey[]
+  announcements        Announcement[]
+  savedReports         SavedReport[]
+  ticketTags           Tag[]
+  ticketCategories     TicketCategory[]
+  feedbackCategories   FeedbackCategory[]
+  knowledgeCategories  KnowledgeCategory[]
+  knowledgeArticles    KnowledgeArticle[]
+  slaPolicies          SLAPolicy[]
+  businessHours        BusinessHours[]
+  holidays             Holiday[]
+  organizationInviteLinks OrganizationInviteLink[]
+  evidence             Evidence[]
+  knowledgeTags        KnowledgeTag[]
+  payments             Payment[]
+  invoices             Invoice[]
+  notificationTemplates NotificationTemplate[]
+
+  @@index([slug])
+  @@index([subdomain])
+  @@index([customDomain])
+  @@index([tenantKey])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("organizations")
+}
+
+model OrganizationSettings {
+  id                     String       @id @default(cuid())
+  organizationId         String       @unique
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultLanguage        Language     @default(EN)
+  defaultTheme           ThemeMode    @default(LIGHT)
+  timezone               String       @default("UTC")
+  dateFormat             String       @default("MM/DD/YYYY")
+  ticketAutoAssignment   Boolean      @default(false)
+  ticketAutoCloseDays    Int          @default(7)
+  feedbackAutoRequest    Boolean      @default(true)
+  notificationEmail      String?
+  supportEmail           String?
+  supportPhone           String?
+  customCSS              String?
+
+  // Customer Portal Settings
+  allowPublicTickets     Boolean      @default(false)
+  allowAnonymousFeedback Boolean      @default(true)
+  branding               String?
+  portalTheme            String       @default("default")
+  portalLogo             String?
+  portalFooter           String?
+  knowledgeBaseEnabled   Boolean      @default(true)
+
+  // Organization Branding
+  primaryColor           String?      @default("#3B82F6")
+  secondaryColor         String?      @default("#6366F1")
+  brandLogo              String?
+  brandFavicon           String?
+  emailBranding          String?
+  portalTitle            String?
+
+  // Feedback Settings
+  feedbackRequestDelayHours Int       @default(24)
+  maxFeedbackRequests    Int          @default(3)
+  defaultFeedbackFormId  String?
+  maxAttachmentSizeMb    Int?
+
+  // SLA Settings
+  defaultSLAId           String?
+
+  metadata               Json?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@map("organization_settings")
+}
+
+model User {
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  password             String
+  firstName            String
+  lastName             String
+  phone                String?
+  avatarUrl            String?
+  role                 UserRole             @default(CUSTOMER)
+  status               UserStatus           @default(PENDING_VERIFICATION)
+  organizationId       String?
+  organization         Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  lastLoginAt          DateTime?
+  emailVerifiedAt      DateTime?
+  preferences          Json?
+  metadata             Json?
+  deletedAt            DateTime?
+  deletedById          String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  refreshTokens        RefreshToken[]
+  sessions             UserSession[]
+  emailVerification    EmailVerificationToken?
+  passwordResets       PasswordResetToken[]
+  createdTickets       Ticket[]             @relation("TicketCreatedBy")
+  assignedTickets      Ticket[]             @relation("TicketAssignedTo")
+  ticketReplies        TicketReply[]
+  ticketActivities     TicketActivity[]
+  ticketWatchers       TicketWatcher[]
+  ticketAttachments    TicketAttachment[]
+  ticketFeedback       TicketFeedback[]
+  feedbackForms        FeedbackForm[]       @relation("FeedbackFormCreatedBy")
+  feedbackResponses    FeedbackResponse[]   @relation("FeedbackResponseSubmittedBy")
+  feedbackRequests     FeedbackRequest[]    @relation("FeedbackRequestSubmittedBy")
+  notifications        Notification[]
+  notificationPrefs    NotificationPreference[]
+  notificationSettings NotificationSettings[]
+  notificationTemplates NotificationTemplate[] @relation("TemplateCreatedBy")
+  auditLogs            AuditLog[]           @relation("AuditActor")
+  loginHistory         LoginHistory[]
+  fileUploads          FileUpload[]
+  apiKeys              ApiKey[]
+  invitations          Invitation[]         @relation("InvitedBy")
+  acceptedInvitations  Invitation[]         @relation("AcceptedBy")
+  savedReports         SavedReport[]
+  departmentMemberships DepartmentMember[]
+  knowledgeArticles    KnowledgeArticle[]   @relation("ArticleCreatedBy")
+  knowledgeArticleUpdates KnowledgeArticle[] @relation("ArticleUpdatedBy")
+  knowledgeArticleFeedback KnowledgeArticleFeedback[]
+  slaPolicies          SLAPolicy[]          @relation("SLACreatedBy")
+  slaPolicyUpdates     SLAPolicy[]          @relation("SLAUpdatedBy")
+  organizationInviteLinks OrganizationInviteLink[]
+  announcements        Announcement[]       @relation("AnnouncementCreatedBy")
+  evidence             Evidence[]           @relation("EvidenceUploadedBy")
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([role])
+  @@index([status])
+  @@index([organizationId, role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id                   String         @id @default(cuid())
+  token                String         @unique
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt            DateTime
+  revokedAt            DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model UserSession {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionToken         String         @unique
+  ipAddress            String?
+  userAgent            String?
+  deviceInfo           String?
+  location             String?
+  expiresAt            DateTime
+  invalidatedAt        DateTime?
+  lastActivityAt       DateTime
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model EmailVerificationToken {
+  id                   String         @id @default(cuid())
+  token                String         @unique
+  userId               String         @unique
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id                   String         @id @default(cuid())
+  token                String         @unique
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt            DateTime
+  usedAt               DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model Invitation {
+  id                   String           @id @default(cuid())
+  token                String           @unique
+  email                String
+  role                 UserRole         @default(CUSTOMER)
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedById          String
+  invitedBy            User             @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+  acceptedById         String?
+  acceptedBy           User?            @relation("AcceptedBy", fields: [acceptedById], references: [id])
+  status               InvitationStatus @default(PENDING)
+  expiresAt            DateTime
+  acceptedAt           DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@unique([email, organizationId, status])
+  @@index([token])
+  @@index([email])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+model OrganizationInviteLink {
+  id                   String           @id @default(cuid())
+  code                 String           @unique
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById          String
+  createdBy            User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  role                 UserRole         @default(CUSTOMER)
+  expiresAt            DateTime
+  maxUses              Int              @default(1)
+  usedCount            Int              @default(0)
+  isActive             Boolean          @default(true)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([code])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("organization_invite_links")
+}
+
+model Permission {
+  id                   String         @id @default(cuid())
+  code                 PermissionCode @unique
+  description          String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  roles                RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id                   String         @id @default(cuid())
+  role                 UserRole
+  permissionId         String
+  permission           Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([role, permissionId])
+  @@index([role])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ==================================================
+// DEPARTMENTS
+// ==================================================
+
+model Department {
+  id                   String         @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId             String?
+  parent               Department?    @relation("DepartmentParent", fields: [parentId], references: [id])
+  children             Department[]   @relation("DepartmentParent")
+  isActive             Boolean        @default(true)
+  metadata             Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  members              DepartmentMember[]
+  tickets              Ticket[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@index([parentId])
+  @@map("departments")
+}
+
+model DepartmentMember {
+  id                   String         @id @default(cuid())
+  departmentId         String
+  department           Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isManager            Boolean        @default(false)
+  joinedAt             DateTime       @default(now())
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([departmentId, userId])
+  @@index([departmentId])
+  @@index([userId])
+  @@map("department_members")
+}
+
+// ==================================================
+// TICKETS
+// ==================================================
+
+model TicketCategory {
+  id                   String         @id @default(cuid())
+  name                 String
+  color                String?
+  description          String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  tickets              Ticket[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("ticket_categories")
+}
+
+model Ticket {
+  id                   String           @id @default(cuid())
+  ticketNumber         String
+  subject              String
+  description          String?
+  status               TicketStatus     @default(OPEN)
+  priority             TicketPriority   @default(MEDIUM)
+  source               TicketSource     @default(PORTAL)
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categoryId           String?
+  category             TicketCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  departmentId         String?
+  department           Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdById          String
+  createdBy            User             @relation("TicketCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedToId         String?
+  assignedTo           User?            @relation("TicketAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  resolvedAt           DateTime?
+  resolvedById         String?
+  closedAt             DateTime?
+  closedById           String?
+  dueAt                DateTime?
+  firstRespondedAt     DateTime?
+  firstResponseDueAt   DateTime?
+  resolutionDueAt      DateTime?
+  lastActivityAt       DateTime?
+  closedReason         String?
+  reopenedCount        Int              @default(0)
+  internalNotes        String?
+  feedbackRequestedAt  DateTime?
+  feedbackSubmittedAt  DateTime?
+  metadata             Json?
+  deletedAt            DateTime?
+  deletedById          String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  replies              TicketReply[]
+  attachments          TicketAttachment[]
+  activities           TicketActivity[]
+  watchers             TicketWatcher[]
+  ticketTags           TicketTag[]
+  slaHistory           TicketSLAHistory[]
+  evidence             Evidence[]
+  feedback             TicketFeedback?
+  feedbackResponses    FeedbackResponse[]
+  feedbackRequests     FeedbackRequest[]
+
+  @@unique([organizationId, ticketNumber])
+  @@index([organizationId])
+  @@index([ticketNumber])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, assignedToId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, priority])
+  @@index([deletedAt])
+  @@map("tickets")
+}
+
+model Tag {
+  id                   String         @id @default(cuid())
+  name                 String
+  color                String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  assignments          TicketTag[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("tags")
+}
+
+model TicketTag {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  ticketId             String
+  ticket               Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tagId                String
+  tag                  Tag            @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([ticketId, tagId])
+  @@index([ticketId])
+  @@index([tagId])
+  @@index([organizationId])
+  @@map("ticket_tags")
+}
+
+model TicketReply {
+  id                   String           @id @default(cuid())
+  organizationId       String
+  ticketId             String
+  ticket               Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId             String
+  author               User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body                 String
+  replyType            TicketReplyType  @default(AGENT)
+  isInternal           Boolean          @default(false)
+  mentions             String[]         @default([])
+  editedAt             DateTime?
+  deletedAt            DateTime?
+  metadata             Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  attachments          TicketAttachment[]
+
+  @@index([ticketId])
+  @@index([authorId])
+  @@index([organizationId])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("ticket_replies")
+}
+
+model TicketAttachment {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  ticketId             String?
+  ticket               Ticket?        @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  replyId              String?
+  reply                TicketReply?   @relation(fields: [replyId], references: [id], onDelete: SetNull)
+  uploadedById         String
+  uploadedBy           User           @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  fileId               String
+  file                 FileUpload     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  originalName         String
+  storedName           String
+  mimeType             String
+  fileSize             BigInt
+  bucket               String
+  path                 String
+  publicUrl            String?
+  isEvidence           Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([ticketId])
+  @@index([replyId])
+  @@index([uploadedById])
+  @@index([fileId])
+  @@index([organizationId])
+  @@index([isEvidence])
+  @@map("ticket_attachments")
+}
+
+model TicketActivity {
+  id                   String             @id @default(cuid())
+  organizationId       String
+  ticketId             String
+  ticket               Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorId              String?
+  actor                User?              @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  activityType         TicketActivityType
+  title                String?
+  message              String?
+  changes              Json?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([ticketId])
+  @@index([actorId])
+  @@index([organizationId])
+  @@index([activityType])
+  @@index([createdAt])
+  @@map("ticket_activities")
+}
+
+model TicketWatcher {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  ticketId             String
+  ticket               Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([ticketId, userId])
+  @@index([ticketId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("ticket_watchers")
+}
+
+model TicketFeedback {
+  id                   String             @id @default(cuid())
+  ticketId             String             @unique
+  ticket               Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  organizationId       String
+  submittedById        String
+  submittedBy          User               @relation(fields: [submittedById], references: [id], onDelete: Cascade)
+  rating               Int
+  comment              String?
+  wouldRecommend       Boolean?
+  responseTime         Int?
+  resolutionTime       Int?
+  metadata             Json?
+  submittedAt          DateTime           @default(now())
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([ticketId])
+  @@index([organizationId])
+  @@index([submittedById])
+  @@map("ticket_feedback")
+}
+
+// ==================================================
+// EVIDENCE
+// ==================================================
+
+model Evidence {
+  id                   String         @id @default(cuid())
+  ticketId             String
+  ticket               Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedById         String
+  uploadedBy           User           @relation("EvidenceUploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+  fileId               String
+  file                 FileUpload     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  type                 EvidenceType
+  description          String?
+  isPublic             Boolean        @default(false)
+  metadata             Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([ticketId])
+  @@index([organizationId])
+  @@index([uploadedById])
+  @@index([type])
+  @@map("evidence")
+}
+
+// ==================================================
+// SLA
+// ==================================================
+
+model SLAPolicy {
+  id                   String           @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priority             SLAPriority
+  status               SLAStatus        @default(ACTIVE)
+  firstResponseMinutes Int
+  resolutionMinutes    Int
+  escalationMinutes    Int?
+  isDefault            Boolean          @default(false)
+  businessHoursId      String?
+  businessHours        BusinessHours?   @relation(fields: [businessHoursId], references: [id])
+  createdById          String
+  createdBy            User             @relation("SLACreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  updatedById          String?
+  updatedBy            User?            @relation("SLAUpdatedBy", fields: [updatedById], references: [id])
+  metadata             Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  ticketSLAHistory     TicketSLAHistory[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@index([priority])
+  @@index([status])
+  @@map("sla_policies")
+}
+
+model BusinessHours {
+  id                   String           @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type                 BusinessHoursType @default(STANDARD)
+  timezone             String           @default("UTC")
+  isDefault            Boolean          @default(false)
+  mondayOpen           String?
+  mondayClose          String?
+  tuesdayOpen          String?
+  tuesdayClose         String?
+  wednesdayOpen        String?
+  wednesdayClose       String?
+  thursdayOpen         String?
+  thursdayClose        String?
+  fridayOpen           String?
+  fridayClose          String?
+  saturdayOpen         String?
+  saturdayClose        String?
+  sundayOpen           String?
+  sundayClose          String?
+  isActive             Boolean          @default(true)
+  metadata             Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  slaPolicies          SLAPolicy[]
+  holidays             Holiday[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("business_hours")
+}
+
+model Holiday {
+  id                   String           @id @default(cuid())
+  name                 String
+  description          String?
+  type                 HolidayType      @default(PUBLIC)
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessHoursId      String?
+  businessHours        BusinessHours?   @relation(fields: [businessHoursId], references: [id], onDelete: SetNull)
+  date                 DateTime
+  isRecurring          Boolean          @default(false)
+  isActive             Boolean          @default(true)
+  metadata             Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@unique([name, organizationId, date])
+  @@index([organizationId])
+  @@index([businessHoursId])
+  @@map("holidays")
+}
+
+model TicketSLAHistory {
+  id                   String         @id @default(cuid())
+  ticketId             String
+  ticket               Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  slaPolicyId          String
+  slaPolicy            SLAPolicy      @relation(fields: [slaPolicyId], references: [id], onDelete: Cascade)
+  appliedAt            DateTime       @default(now())
+  firstResponseDue     DateTime?
+  resolutionDue        DateTime?
+  firstResponseAt      DateTime?
+  resolvedAt           DateTime?
+  isBreached           Boolean        @default(false)
+  breachReason         String?
+  warningSentAt        DateTime?
+  breachedAt           DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([ticketId])
+  @@index([slaPolicyId])
+  @@map("ticket_sla_history")
+}
+
+// ==================================================
+// FEEDBACK
+// ==================================================
+
+model FeedbackCategory {
+  id                   String         @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId             String?
+  parent               FeedbackCategory? @relation("CategoryParent", fields: [parentId], references: [id])
+  children             FeedbackCategory[] @relation("CategoryParent")
+  order                Int            @default(0)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  forms                FeedbackForm[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("feedback_categories")
+}
+
+model FeedbackForm {
+  id                   String             @id @default(cuid())
+  title                String
+  slug                 String?
+  description          String?
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categoryId           String?
+  category             FeedbackCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdById          String
+  createdBy            User               @relation("FeedbackFormCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  status               FeedbackFormStatus @default(DRAFT)
+  isPublic             Boolean            @default(false)
+  allowAnonymous       Boolean            @default(false)
+  notifyByEmail        Boolean            @default(false)
+  welcomeMessage       String?
+  thankYouMessage      String?
+  redirectUrl          String?
+  publishedAt          DateTime?
+  expiresAt            DateTime?
+  isSatisfactionSurvey Boolean            @default(false)
+  allowMultipleResponses Boolean           @default(false)
+  requireComment       Boolean            @default(false)
+  settings             Json?
+  deletedAt            DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  questions            FeedbackQuestion[]
+  responses            FeedbackResponse[]
+  feedbackRequests     FeedbackRequest[]
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([isPublic])
+  @@index([deletedAt])
+  @@map("feedback_forms")
+}
+
+model FeedbackQuestion {
+  id                   String               @id @default(cuid())
+  organizationId       String
+  formId               String
+  form                 FeedbackForm         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  questionType         FeedbackQuestionType @default(SHORT_TEXT)
+  label                String
+  description          String?
+  placeholder          String?
+  required             Boolean              @default(false)
+  key                  String?
+  options              String[]             @default([])
+  validation           Json?
+  sortOrder            Int                  @default(0)
+  isActive             Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  answers              FeedbackAnswer[]
+
+  @@index([formId])
+  @@index([organizationId])
+  @@map("feedback_questions")
+}
+
+model FeedbackRequest {
+  id                   String                 @id @default(cuid())
+  organizationId       String
+  organization         Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  formId               String
+  form                 FeedbackForm           @relation(fields: [formId], references: [id], onDelete: Cascade)
+  ticketId             String
+  ticket               Ticket                 @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  submittedById        String
+  submittedBy          User                   @relation("FeedbackRequestSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  token                String                 @unique
+  status               FeedbackRequestStatus  @default(PENDING)
+  email                String?
+  sentAt               DateTime?
+  reminderSentAt       DateTime?
+  openedAt             DateTime?
+  submittedAt          DateTime?
+  expiresAt            DateTime
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  responses            FeedbackResponse[]
+
+  @@index([organizationId])
+  @@index([formId])
+  @@index([ticketId])
+  @@index([submittedById])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("feedback_requests")
+}
+
+model FeedbackResponse {
+  id                   String                 @id @default(cuid())
+  organizationId       String
+  organization         Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  formId               String
+  form                 FeedbackForm           @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submittedById        String
+  submittedBy          User                   @relation("FeedbackResponseSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  ticketId             String?
+  ticket               Ticket?                @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  requestId            String?
+  request              FeedbackRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  status               FeedbackResponseStatus @default(SUBMITTED)
+  publicComment        String?
+  privateComment       String?
+  ratings              Json?
+  overallScore         Float?
+  npsScore             Int?
+  customerName         String?
+  customerEmail        String?
+  submittedAt          DateTime               @default(now())
+  editedAt             DateTime?
+  metadata             Json?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  answers              FeedbackAnswer[]
+
+  @@index([formId])
+  @@index([organizationId])
+  @@index([submittedById])
+  @@index([ticketId])
+  @@index([requestId])
+  @@index([submittedAt])
+  @@map("feedback_responses")
+}
+
+model FeedbackAnswer {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  responseId           String
+  response             FeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId           String
+  question             FeedbackQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answerText           String?
+  answerNumber         Float?
+  answerBoolean        Boolean?
+  answerDate           DateTime?
+  answerOptions        String[]       @default([])
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([responseId, questionId])
+  @@index([responseId])
+  @@index([questionId])
+  @@index([organizationId])
+  @@map("feedback_answers")
+}
+
+// ==================================================
+// KNOWLEDGE BASE
+// ==================================================
+
+model KnowledgeCategory {
+  id                   String         @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId             String?
+  parent               KnowledgeCategory? @relation("CategoryParent", fields: [parentId], references: [id])
+  children             KnowledgeCategory[] @relation("CategoryParent")
+  order                Int            @default(0)
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  articles             KnowledgeArticle[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("knowledge_categories")
+}
+
+model KnowledgeArticle {
+  id                   String         @id @default(cuid())
+  title                String
+  slug                 String
+  content              String
+  excerpt              String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categoryId           String?
+  category             KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  status               KnowledgeArticleStatus @default(DRAFT)
+  visibility           KnowledgeArticleVisibility @default(PUBLIC)
+  views                Int            @default(0)
+  likes                Int            @default(0)
+  helpfulCount         Int            @default(0)
+  notHelpfulCount      Int            @default(0)
+  createdById          String
+  createdBy            User           @relation("ArticleCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  updatedById          String?
+  updatedBy            User?          @relation("ArticleUpdatedBy", fields: [updatedById], references: [id])
+  publishedAt          DateTime?
+  metadata             Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  feedback             KnowledgeArticleFeedback[]
+  tags                 KnowledgeArticleTag[]
+
+  @@unique([slug, organizationId])
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([visibility])
+  @@index([createdAt])
+  @@map("knowledge_articles")
+}
+
+model KnowledgeTag {
+  id                   String         @id @default(cuid())
+  name                 String
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  articles             KnowledgeArticleTag[]
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("knowledge_tags")
+}
+
+model KnowledgeArticleTag {
+  id                   String         @id @default(cuid())
+  articleId            String
+  article              KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tagId                String
+  tag                  KnowledgeTag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([articleId, tagId])
+  @@index([articleId])
+  @@index([tagId])
+  @@map("knowledge_article_tags")
+}
+
+model KnowledgeArticleFeedback {
+  id                   String         @id @default(cuid())
+  articleId            String
+  article              KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isHelpful            Boolean
+  comment              String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([articleId, userId])
+  @@index([articleId])
+  @@index([userId])
+  @@map("knowledge_article_feedback")
+}
+
+// ==================================================
+// SUBSCRIPTIONS & BILLING
+// ==================================================
+
+model SubscriptionPlan {
+  id                   String         @id @default(cuid())
+  code                 String         @unique
+  name                 String         @unique
+  type                 PlanType       @unique
+  description          String?
+  priceMonthly         Decimal?
+  priceYearly          Decimal?
+  currency             String         @default("USD")
+  features             Json           @default("{}")
+  limits               Json           @default("{}")
+  maxUsers             Int            @default(0)
+  maxAgents            Int            @default(0)
+  maxCustomers         Int            @default(0)
+  maxTicketsPerMonth   Int            @default(0)
+  maxFeedbackForms     Int            @default(0)
+  maxAttachmentsPerTicket Int         @default(0)
+  maxKnowledgeArticles Int            @default(0)
+  maxInvitations       Int            @default(0)
+  storageLimitBytes    BigInt         @default(0)
+  apiMonthlyQuota      Int            @default(0)
+  trialDays            Int            @default(14)
+  sortOrder            Int            @default(0)
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  subscriptions        OrganizationSubscription[]
+  pendingSubscriptions OrganizationSubscription[] @relation("SubscriptionPendingPlan")
+  featureLimits        FeatureLimit[]
+  payments             Payment[]
+  invoices             Invoice[]
+
+  @@map("subscription_plans")
+}
+
+model OrganizationSubscription {
+  id                   String             @id @default(cuid())
+  organizationId       String             @unique
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  pendingPlanId        String?
+  pendingPlan          SubscriptionPlan?  @relation("SubscriptionPendingPlan", fields: [pendingPlanId], references: [id], onDelete: SetNull)
+  status               SubscriptionStatus @default(TRIALING)
+  billingInterval      BillingInterval    @default(MONTHLY)
+  startDate            DateTime           @default(now())
+  endDate              DateTime?
+  trialStartedAt       DateTime?
+  trialEndsAt          DateTime?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  renewsAt             DateTime?
+  cancelAt             DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  cancelledAt          DateTime?
+  paymentProvider      PaymentProvider?
+  providerSubscriptionId String?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  usageRecords         UsageRecord[]
+  payments             Payment[]
+  invoices             Invoice[]
+
+  @@index([organizationId])
+  @@index([planId])
+  @@index([pendingPlanId])
+  @@index([status])
+  @@index([endDate])
+  @@index([currentPeriodEnd])
+  @@map("organization_subscriptions")
+}
+
+model FeatureLimit {
+  id                   String         @id @default(cuid())
+  planId               String
+  plan                 SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name                 String
+  limit                Int
+  description          String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([planId, name])
+  @@index([planId])
+  @@map("feature_limits")
+}
+
+model UsageRecord {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscriptionId       String
+  subscription         OrganizationSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  metric               String
+  value                Int            @default(0)
+  periodStart          DateTime
+  periodEnd            DateTime
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([organizationId, metric, periodStart])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([metric])
+  @@index([periodStart])
+  @@map("usage_records")
+}
+
+model Payment {
+  id                   String           @id @default(cuid())
+  organizationId       String
+  organization         Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscriptionId       String?
+  subscription         OrganizationSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  planId               String
+  plan                 SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  reference            String           @unique
+  idempotencyKey       String           @unique
+  status               PaymentStatus    @default(PENDING)
+  provider             PaymentProvider  @default(PAYCHANGU)
+  amount               Decimal
+  currency             String           @default("USD")
+  providerTransactionId String?
+  paymentMethod        String?
+  receiptNumber        String?
+  failureReason        String?
+  paidAt               DateTime?
+  metadata             Json?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  invoice              Invoice?
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([planId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Invoice {
+  id                   String         @id @default(cuid())
+  invoiceNumber        String         @unique
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscriptionId       String?
+  subscription         OrganizationSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  planId               String?
+  plan                 SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  paymentId            String?        @unique
+  payment              Payment?       @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  items                Json           @default("[]")
+  amount               Decimal
+  tax                  Decimal        @default(0)
+  total                Decimal
+  currency             String         @default("USD")
+  status               InvoiceStatus  @default(PENDING)
+  dueDate              DateTime?
+  paidAt               DateTime?
+  receiptReference     String?
+  metadata             Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([planId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+// ==================================================
+// NOTIFICATIONS
+// ==================================================
+
+model Notification {
+  id                   String             @id @default(cuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                 NotificationType
+  channel              NotificationChannel @default(IN_APP)
+  priority             NotificationPriority @default(MEDIUM)
+  title                String
+  body                 String?
+  data                 Json?
+  relatedEntityType    String?
+  relatedEntityId      String?
+  deliveryStatus       NotificationDeliveryStatus @default(PENDING)
+  scheduledAt          DateTime?
+  sentAt               DateTime?
+  deliveredAt          DateTime?
+  isRead               Boolean            @default(false)
+  readAt               DateTime?
+  isArchived           Boolean            @default(false)
+  archivedAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([isArchived])
+  @@index([deliveryStatus])
+  @@index([createdAt])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                 NotificationType
+  channel              NotificationChannel
+  isEnabled            Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([type])
+  @@map("notification_preferences")
+}
+
+model NotificationSettings {
+  id                       String         @id @default(cuid())
+  userId                   String
+  user                     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId           String?
+  enableEmail              Boolean        @default(true)
+  enableInApp              Boolean        @default(true)
+  enableRealtime           Boolean        @default(true)
+  enableTicketUpdates      Boolean        @default(true)
+  enableFeedbackNotifications Boolean     @default(true)
+  enableMarketingEmails    Boolean        @default(false)
+  enableSecurityAlerts     Boolean        @default(true)
+  quietHoursStart          String?
+  quietHoursEnd            String?
+  timezone                 String         @default("UTC")
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@map("notification_settings")
+}
+
+model NotificationTemplate {
+  id                   String               @id @default(cuid())
+  organizationId       String?
+  organization         Organization?        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById          String
+  createdBy            User                 @relation("TemplateCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  name                 String
+  slug                 String
+  description          String?
+  type                 String
+  channel              NotificationChannel  @default(EMAIL)
+  subject              String
+  body                 String
+  variables            String[]             @default([])
+  status               NotificationTemplateStatus @default(ACTIVE)
+  enabled              Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@unique([slug, organizationId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("notification_templates")
+}
+
+model Announcement {
+  id                   String             @id @default(cuid())
+  organizationId       String?
+  organization         Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById          String
+  createdBy            User               @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  title                String
+  body                 String
+  type                 String             @default("ANNOUNCEMENT")
+  priority             NotificationPriority @default(MEDIUM)
+  audience             AnnouncementAudience @default(ALL)
+  status               AnnouncementStatus @default(DRAFT)
+  scheduledAt          DateTime?
+  publishedAt          DateTime?
+  expiresAt            DateTime?
+  audienceTarget       Json?
+  isGlobal             Boolean            @default(false)
+  isActive             Boolean            @default(true)
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([organizationId])
+  @@index([isGlobal])
+  @@index([isActive])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([expiresAt])
+  @@map("announcements")
+}
+
+// ==================================================
+// AUDIT & LOGGING
+// ==================================================
+
+model AuditLog {
+  id                   String         @id @default(cuid())
+  organizationId       String?
+  organization         Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actorId              String?
+  actor                User?          @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail           String?
+  actorName            String?
+  action               AuditAction
+  entityType           String
+  entityId             String?
+  changes              Json?
+  metadata             Json?
+  ipAddress            String?
+  userAgent            String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([organizationId])
+  @@index([actorId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model LoginHistory {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  loginAt              DateTime       @default(now())
+  ipAddress            String?
+  userAgent            String?
+  location             String?
+  deviceInfo           String?
+  isSuccessful         Boolean        @default(true)
+  failureReason        String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([loginAt])
+  @@index([userId, loginAt])
+  @@map("login_histories")
+}
+
+// ==================================================
+// FILE STORAGE
+// ==================================================
+
+model FileUpload {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedById         String
+  uploadedBy           User           @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  originalName         String
+  storedName           String         @unique
+  mimeType             String
+  fileSize             BigInt
+  fileType             FileType
+  bucket               String
+  path                 String
+  publicUrl            String?
+  isPublic             Boolean        @default(false)
+  metadata             Json?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  ticketAttachments    TicketAttachment[]
+  evidence             Evidence[]
+
+  @@index([organizationId])
+  @@index([uploadedById])
+  @@index([storedName])
+  @@map("file_uploads")
+}
+
+// ==================================================
+// SYSTEM & PLATFORM
+// ==================================================
+
+model SystemSetting {
+  id                   String         @id @default(cuid())
+  key                  String         @unique
+  value                Json
+  description          String?
+  isEncrypted          Boolean        @default(false)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@map("system_settings")
+}
+
+model SavedReport {
+  id                   String         @id @default(cuid())
+  name                 String
+  description          String?
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById          String
+  createdBy            User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  type                 String
+  filters              Json
+  columns              String[]
+  schedule             Json?
+  lastRunAt            DateTime?
+  nextRunAt            DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([organizationId])
+  @@index([createdById])
+  @@map("saved_reports")
+}
+
+model ApiKey {
+  id                   String         @id @default(cuid())
+  name                 String
+  key                  String         @unique
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions          PermissionCode[]
+  expiresAt            DateTime?
+  lastUsedAt           DateTime?
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([key])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("api_keys")
+}
