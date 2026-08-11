@@ -140,12 +140,14 @@ export const USAGE_RESOURCE_TYPES = [
 ] as const;
 
 export const SUBSCRIPTION_STATUS_OPTIONS = [
+  'PENDING',
+  'TRIALING',
   'ACTIVE',
+  'PENDING_PAYMENT',
   'PAST_DUE',
-  'CANCELED',
+  'SUSPENDED',
+  'CANCELLED',
   'EXPIRED',
-  'TRIAL',
-  'INACTIVE',
 ] as const;
 
 export const PAYMENT_STATUS_OPTIONS = [

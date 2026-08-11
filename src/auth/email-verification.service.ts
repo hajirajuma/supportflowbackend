@@ -25,6 +25,12 @@ export class EmailVerificationService {
     return token;
   }
 
+  async findByToken(token: string) {
+    return (this.prisma as any).emailVerificationToken.findUnique({
+      where: { token },
+    });
+  }
+
   async validateToken(token: string) {
     const verificationToken = await (
       this.prisma as any

@@ -12,8 +12,6 @@ export class SupportInformationService {
         select: {
           id: true,
           name: true,
-          email: true,
-          phone: true,
           website: true,
           timezone: true,
           locale: true,
@@ -24,16 +22,15 @@ export class SupportInformationService {
         select: {
           supportEmail: true,
           supportPhone: true,
-          businessHours: true,
         },
       }),
     ]);
 
     return {
       organizationName: organization?.name ?? null,
-      supportEmail: settings?.supportEmail ?? organization?.email ?? null,
-      supportPhone: settings?.supportPhone ?? organization?.phone ?? null,
-      businessHours: settings?.businessHours ?? null,
+      supportEmail: settings?.supportEmail ?? null,
+      supportPhone: settings?.supportPhone ?? null,
+      businessHours: null,
       officeAddress: null,
       website: organization?.website ?? null,
       timezone: organization?.timezone ?? 'UTC',

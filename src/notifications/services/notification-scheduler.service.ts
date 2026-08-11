@@ -42,7 +42,7 @@ export class NotificationSchedulerService {
   })
   async handleScheduledNotifications() {
     try {
-      const due = await (this.prisma as any).notification.findMany({
+      const due = await this.prisma.notification.findMany({
         where: {
           deliveryStatus: 'PENDING',
           scheduledAt: { lte: new Date() },
@@ -69,7 +69,7 @@ export class NotificationSchedulerService {
   @Cron(CronExpression.EVERY_HOUR, { name: 'notifications-expire' })
   async handleNotificationExpiry() {
     try {
-      const result = await (this.prisma as any).notification.updateMany({
+      const result = await this.prisma.notification.updateMany({
         where: {
           expiresAt: { lt: new Date() },
           deliveryStatus: 'PENDING',

@@ -6,6 +6,7 @@ import {
   Post,
   Request,
   UseGuards,
+  Param,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,6 +26,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
 
@@ -44,6 +46,15 @@ export class AuthController {
   @ApiBody({ type: RegisterOrganizationDto })
   async register(@Body() dto: RegisterOrganizationDto) {
     return this.authService.registerOrganization(dto);
+  }
+
+  @Public()
+  @Get('subdomain-availability/:subdomain')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Check whether a subdomain is available' })
+  @ApiResponse({ status: 200, description: 'Subdomain availability returned' })
+  async checkSubdomainAvailability(@Param('subdomain') subdomain: string) {
+    return this.authService.checkSubdomainAvailability(subdomain);
   }
 
   @Public()
@@ -97,6 +108,15 @@ export class AuthController {
   @ApiBody({ type: VerifyEmailDto })
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmail(dto);
+  }
+
+  @Public()
+  @Post('resend-verification')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Resend the email verification link' })
+  @ApiBody({ type: ResendVerificationDto })
+  async resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.resendVerification(dto);
   }
 
   @Get('me')

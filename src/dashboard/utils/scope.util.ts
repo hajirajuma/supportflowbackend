@@ -53,9 +53,8 @@ export function resolveScope(
     const canScopeAgent =
       access.isOwner ||
       access.isAdmin ||
-      (opts?.allowAgentScope &&
-        access.isAgent &&
-        filter.agentId === access.userId);
+      // A support agent may always scope to their own performance data.
+      (access.isAgent && filter.agentId === access.userId);
     if (!canScopeAgent) {
       throw new ForbiddenException('You cannot view another agent analytics.');
     }

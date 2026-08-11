@@ -139,9 +139,6 @@ export class CustomerPortalService {
         lastName: true,
         avatarUrl: true,
         role: true,
-        timezone: true,
-        locale: true,
-        darkMode: true,
       },
     });
 

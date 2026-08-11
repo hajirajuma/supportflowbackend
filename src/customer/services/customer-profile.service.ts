@@ -111,7 +111,7 @@ export class CustomerProfileService {
 
     const isCurrentPasswordValid = await PasswordUtil.compare(
       dto.currentPassword,
-      user.passwordHash,
+      user.password,
     );
     if (!isCurrentPasswordValid) {
       throw new BadRequestException('Current password is incorrect');
@@ -121,7 +121,7 @@ export class CustomerProfileService {
 
     await (this.prisma as any).user.update({
       where: { id: user.id },
-      data: { passwordHash: newPasswordHash },
+      data: { password: newPasswordHash },
     });
 
     await this.auditLogService.record({

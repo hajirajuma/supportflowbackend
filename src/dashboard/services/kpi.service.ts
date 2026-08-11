@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardAccess } from '../types/dashboard-access.type';
-import { ScopeableFilter } from '../utils/scope.util';
 import {
+  ScopeableFilter,
   resolveScope,
   baseScopeWhere,
   ticketScopeWhere,
@@ -35,7 +35,10 @@ export class KpiService {
     filter?: ScopeableFilter,
   ): Promise<KpiResult> {
     const scope = resolveScope(access, filter);
-    const { from, to } = resolveRange(filter?.dateFrom, filter?.dateTo);
+    const { from, to } = resolveRange(
+      filter?.dateFrom,
+      filter?.dateTo,
+    );
 
     const [
       resolutionTime,
@@ -89,19 +92,30 @@ export class KpiService {
       where: {
         ...ticketScopeWhere(scope),
         resolvedAt: { not: null },
-        createdAt: { gte: from, lte: to },
+        createdAt: {
+          gte: from,
+          lte: to,
+        },
       },
-      select: { createdAt: true, resolvedAt: true },
+      select: {
+        createdAt: true,
+        resolvedAt: true,
+      },
     });
 
     if (!tickets.length) return 0;
+
     const total = tickets.reduce(
-      (sum, t: any) =>
+      (sum: number, ticket: any) =>
         sum +
-        (new Date(t.resolvedAt).getTime() - new Date(t.createdAt).getTime()),
+        (new Date(ticket.resolvedAt).getTime() -
+          new Date(ticket.createdAt).getTime()),
       0,
     );
-    return Math.round((total / tickets.length / 60000) * 100) / 100;
+
+    return Math.round(
+      (total / tickets.length / 60000) * 100,
+    ) / 100;
   }
 
   private async avgFirstResponseTime(
@@ -117,21 +131,38 @@ export class KpiService {
     const tickets = await (this.prisma as any).ticket.findMany({
       where: {
         ...ticketScopeWhere(scope),
-        firstResponseAt: { not: null },
-        createdAt: { gte: from, lte: to },
+
+        // CORRECT Prisma field name
+        firstRespondedAt: {
+          not: null,
+        },
+
+        createdAt: {
+          gte: from,
+          lte: to,
+        },
       },
-      select: { createdAt: true, firstResponseAt: true },
+
+      // CORRECT Prisma field name
+      select: {
+        createdAt: true,
+        firstRespondedAt: true,
+      },
     });
 
     if (!tickets.length) return 0;
+
     const total = tickets.reduce(
-      (sum, t: any) =>
+      (sum: number, ticket: any) =>
         sum +
-        (new Date(t.firstResponseAt).getTime() -
-          new Date(t.createdAt).getTime()),
+        (new Date(ticket.firstRespondedAt).getTime() -
+          new Date(ticket.createdAt).getTime()),
       0,
     );
-    return Math.round((total / tickets.length / 60000) * 100) / 100;
+
+    return Math.round(
+      (total / tickets.length / 60000) * 100,
+    ) / 100;
   }
 
   private async ticketResolutionRate(
@@ -148,67 +179,115 @@ export class KpiService {
       (this.prisma as any).ticket.count({
         where: {
           ...ticketScopeWhere(scope),
-          createdAt: { gte: from, lte: to },
+          createdAt: {
+            gte: from,
+            lte: to,
+          },
         },
       }),
+
       (this.prisma as any).ticket.count({
         where: {
           ...ticketScopeWhere(scope),
-          createdAt: { gte: from, lte: to },
-          status: { in: ['RESOLVED', 'CLOSED'] },
+          createdAt: {
+            gte: from,
+            lte: to,
+          },
+          status: {
+            in: ['RESOLVED', 'CLOSED'],
+          },
         },
       }),
     ]);
-    return total ? Math.round((resolved / total) * 1000) / 10 : 0;
+
+    return total
+      ? Math.round((resolved / total) * 1000) / 10
+      : 0;
   }
 
   private async csat(
-    scope: { organizationId?: string; organizationIds?: string[] },
+    scope: {
+      organizationId?: string;
+      organizationIds?: string[];
+    },
     from: Date,
     to: Date,
   ): Promise<number> {
-    const responses = await (this.prisma as any).ticketFeedback.findMany({
+    const responses = await (
+      this.prisma as any
+    ).ticketFeedback.findMany({
       where: {
         ...baseScopeWhere(scope),
-        rating: { not: null },
-        submittedAt: { gte: from, lte: to },
+        submittedAt: {
+          gte: from,
+          lte: to,
+        },
       },
-      select: { rating: true },
+      select: {
+        rating: true,
+      },
     });
+
     if (!responses.length) return 0;
+
     const avg =
       responses.reduce(
-        (sum: number, r: any) => sum + this.ratingToNumber(r.rating),
+        (sum: number, response: any) =>
+          sum + this.ratingToNumber(response.rating),
         0,
       ) / responses.length;
+
     return Math.round((avg / 5) * 1000) / 10;
   }
 
   private async nps(
-    scope: { organizationId?: string; organizationIds?: string[] },
+    scope: {
+      organizationId?: string;
+      organizationIds?: string[];
+    },
     from: Date,
     to: Date,
   ): Promise<number | null> {
-    const responses = await (this.prisma as any).ticketFeedback.findMany({
+    const responses = await (
+      this.prisma as any
+    ).ticketFeedback.findMany({
       where: {
         ...baseScopeWhere(scope),
-        wouldRecommend: { not: null },
-        submittedAt: { gte: from, lte: to },
+        wouldRecommend: {
+          not: null,
+        },
+        submittedAt: {
+          gte: from,
+          lte: to,
+        },
       },
-      select: { wouldRecommend: true },
+      select: {
+        wouldRecommend: true,
+      },
     });
+
     if (!responses.length) return null;
+
     const promoters = responses.filter(
-      (r: any) => r.wouldRecommend === true,
+      (response: any) =>
+        response.wouldRecommend === true,
     ).length;
+
     const detractors = responses.filter(
-      (r: any) => r.wouldRecommend === false,
+      (response: any) =>
+        response.wouldRecommend === false,
     ).length;
-    return Math.round(((promoters - detractors) / responses.length) * 100);
+
+    return Math.round(
+      ((promoters - detractors) / responses.length) * 100,
+    );
   }
 
   private async agentProductivity(
-    scope: { organizationId?: string; organizationIds?: string[] },
+    scope: {
+      organizationId?: string;
+      organizationIds?: string[];
+    },
     from: Date,
     to: Date,
   ): Promise<number> {
@@ -216,9 +295,13 @@ export class KpiService {
       (this.prisma as any).ticket.count({
         where: {
           ...ticketScopeWhere(scope),
-          resolvedAt: { gte: from, lte: to },
+          resolvedAt: {
+            gte: from,
+            lte: to,
+          },
         },
       }),
+
       (this.prisma as any).user.count({
         where: {
           ...baseScopeWhere(scope),
@@ -227,51 +310,100 @@ export class KpiService {
         },
       }),
     ]);
-    return agents ? Math.round((resolvedTickets / agents) * 100) / 100 : 0;
+
+    return agents
+      ? Math.round((resolvedTickets / agents) * 100) / 100
+      : 0;
   }
 
   private async organizationGrowthRate(
-    scope: { organizationId?: string; organizationIds?: string[] },
+    scope: {
+      organizationId?: string;
+      organizationIds?: string[];
+    },
     from: Date,
     to: Date,
   ): Promise<number | null> {
-    if (scope.organizationId || scope.organizationIds?.length) return null;
+    // Organization growth only makes sense at platform level
+    if (
+      scope.organizationId ||
+      scope.organizationIds?.length
+    ) {
+      return null;
+    }
+
     const span = to.getTime() - from.getTime();
-    const prevFrom = new Date(from.getTime() - span);
-    const prevTo = new Date(from.getTime() - 1);
+
+    const prevFrom = new Date(
+      from.getTime() - span,
+    );
+
+    const prevTo = new Date(
+      from.getTime() - 1,
+    );
 
     const [current, previous] = await Promise.all([
       (this.prisma as any).organization.count({
-        where: { createdAt: { gte: from, lte: to } },
+        where: {
+          createdAt: {
+            gte: from,
+            lte: to,
+          },
+        },
       }),
+
       (this.prisma as any).organization.count({
-        where: { createdAt: { gte: prevFrom, lte: prevTo } },
+        where: {
+          createdAt: {
+            gte: prevFrom,
+            lte: prevTo,
+          },
+        },
       }),
     ]);
 
-    if (!previous) return current ? null : 0;
-    return Math.round(((current - previous) / previous) * 1000) / 10;
+    if (!previous) {
+      return current ? null : 0;
+    }
+
+    return Math.round(
+      ((current - previous) / previous) * 1000,
+    ) / 10;
   }
 
-  private async retentionRate(scope: {
-    organizationId?: string;
-    organizationIds?: string[];
-  }): Promise<number | null> {
-    const where: Record<string, unknown> = baseScopeWhere(scope);
+  private async retentionRate(
+    scope: {
+      organizationId?: string;
+      organizationIds?: string[];
+    },
+  ): Promise<number | null> {
+    const where: Record<string, unknown> =
+      baseScopeWhere(scope);
+
     const [total, retained] = await Promise.all([
-      (this.prisma as any).organizationSubscription.count({ where }),
+      (this.prisma as any).organizationSubscription.count({
+        where,
+      }),
+
       (this.prisma as any).organizationSubscription.count({
         where: {
           ...where,
-          status: { in: ['ACTIVE', 'PAST_DUE'] },
+          status: {
+            in: ['ACTIVE', 'PAST_DUE'],
+          },
           cancelAtPeriodEnd: false,
         },
       }),
     ]);
-    return total ? Math.round((retained / total) * 1000) / 10 : null;
+
+    return total
+      ? Math.round((retained / total) * 1000) / 10
+      : null;
   }
 
-  private ratingToNumber(rating: unknown): number {
+  private ratingToNumber(
+    rating: unknown,
+  ): number {
     const map: Record<string, number> = {
       VERY_UNSATISFIED: 1,
       UNSATISFIED: 2,
@@ -279,13 +411,25 @@ export class KpiService {
       SATISFIED: 4,
       VERY_SATISFIED: 5,
     };
-    if (typeof rating === 'number') return rating;
+
+    if (typeof rating === 'number') {
+      return rating;
+    }
+
     if (typeof rating === 'string') {
       const normalized = rating.toUpperCase();
-      if (map[normalized]) return map[normalized];
+
+      if (map[normalized]) {
+        return map[normalized];
+      }
+
       const parsed = Number(rating);
-      if (!Number.isNaN(parsed)) return parsed;
+
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
     }
+
     return 0;
   }
 }

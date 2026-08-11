@@ -60,10 +60,10 @@ export class TicketActivityService {
     }
 
     if (access.isCustomer) {
-      where.OR = [
-        { activityType: { notIn: ['NOTE_ADDED'] } },
-        { activityType: null },
-      ];
+      // activityType is a required (non-nullable) column, so a null branch
+      // here is invalid Prisma and 500s the query. Filtering on notIn alone
+      // is sufficient: notes never have a null activity type.
+      where.OR = [{ activityType: { notIn: ['NOTE_ADDED'] } }];
     }
 
     return (this.prisma as any).ticketActivity.findMany({

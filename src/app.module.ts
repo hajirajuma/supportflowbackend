@@ -26,6 +26,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { HealthModule } from './health/health.module';
+import { OrganizationModule } from './organizations/organization.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { HealthModule } from './health/health.module';
     FeedbackModule,
     NotificationsModule,
     SubscriptionsModule,
+    OrganizationModule,
     DashboardModule,
     PlatformAdminModule,
     HealthModule,

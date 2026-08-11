@@ -19,8 +19,9 @@
 // ============================================================================
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -1775,7 +1776,9 @@ model Notification {
   relatedEntityType    String?
   relatedEntityId      String?
   deliveryStatus       NotificationDeliveryStatus @default(PENDING)
+  errorMessage         String?
   scheduledAt          DateTime?
+  expiresAt            DateTime?
   sentAt               DateTime?
   deliveredAt          DateTime?
   isRead               Boolean            @default(false)
@@ -1791,6 +1794,7 @@ model Notification {
   @@index([isRead])
   @@index([isArchived])
   @@index([deliveryStatus])
+  @@index([expiresAt])
   @@index([createdAt])
   @@index([userId, isRead])
   @@map("notifications")

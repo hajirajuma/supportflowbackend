@@ -49,6 +49,7 @@ export class AnalyticsService {
       knowledgeBase,
       revenue,
       kpis,
+      organizationAnalytics,
     ] = await Promise.all([
       this.getTickets(access, filter),
       this.getFeedback(access, filter),
@@ -58,11 +59,10 @@ export class AnalyticsService {
       this.getKnowledgeBase(access, filter),
       this.getRevenue(access, filter),
       this.kpiService.compute(access, filter),
+      access.isPlatformAdmin
+        ? this.getOrganizations(access, filter)
+        : Promise.resolve(undefined),
     ]);
-
-    const organizationAnalytics = access.isPlatformAdmin
-      ? await this.getOrganizations(access, filter)
-      : undefined;
 
     return {
       dateRange: { from, to },
@@ -106,6 +106,8 @@ export class AnalyticsService {
       overdue,
       byStatus,
       byPriority,
+      createdTrend,
+      recent,
     ] = await Promise.all([
       (this.prisma as any).ticket.count({ where }),
       (this.prisma as any).ticket.count({
@@ -130,7 +132,7 @@ export class AnalyticsService {
       (this.prisma as any).ticket.count({
         where: {
           ...where,
-          dueDate: { not: null, lt: new Date() },
+          dueAt: { not: null, lt: new Date() },
           status: { notIn: ['RESOLVED', 'CLOSED'] },
         },
       }),
@@ -144,30 +146,28 @@ export class AnalyticsService {
         where,
         _count: { _all: true },
       }),
+      this.ticketTrend(scope, filter),
+      (this.prisma as any).ticket.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          ticketNumber: true,
+          subject: true,
+          status: true,
+          priority: true,
+          createdAt: true,
+          dueAt: true,
+          assignedTo: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      }),
     ]);
-
-    const createdTrend = await this.ticketTrend(scope, filter);
-
-    const recent = await (this.prisma as any).ticket.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        ticketNumber: true,
-        subject: true,
-        status: true,
-        priority: true,
-        createdAt: true,
-        dueDate: true,
-        assignedTo: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-        createdBy: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-      },
-    });
 
     return {
       summary: {
@@ -237,7 +237,7 @@ export class AnalyticsService {
       ...(filter.customerId ? { submittedById: filter.customerId } : {}),
     };
     if (filter.feedbackRating) {
-      where.rating = this.feedbackRatingToEnum(filter.feedbackRating);
+      where.rating = filter.feedbackRating;
     }
 
     const responses = await (this.prisma as any).ticketFeedback.findMany({
@@ -355,7 +355,7 @@ export class AnalyticsService {
       createdAt: { gte: from, lte: to },
     };
 
-    const [total, successful, failed, byStatus, byProvider, revenue, recent] =
+    const [total, successful, failed, byStatus, byProvider, revenue, recent, payments] =
       await Promise.all([
         (this.prisma as any).payment.count({ where }),
         (this.prisma as any).payment.count({
@@ -394,14 +394,14 @@ export class AnalyticsService {
             organization: { select: { id: true, name: true } },
           },
         }),
+        (this.prisma as any).payment.findMany({
+          where: { ...where, status: 'SUCCESSFUL' },
+          select: { paidAt: true, amount: true },
+        }),
       ]);
 
     const granularity = filter.trend ?? TrendGranularity.MONTH;
     const buckets = buildBuckets(from, to, granularity);
-    const payments = await (this.prisma as any).payment.findMany({
-      where: { ...where, status: 'SUCCESSFUL' },
-      select: { paidAt: true, amount: true },
-    });
     const byPeriod = new Map<string, number>();
     for (const bucket of buckets) byPeriod.set(bucket.key, 0);
     for (const payment of payments) {
@@ -434,10 +434,9 @@ export class AnalyticsService {
 
   async getRevenue(access: DashboardAccess, filter: AnalyticsFilterDto) {
     const scope = resolveScope(access, filter);
-    const mrr = await this.revenueService.getMrr(access, filter);
-    const arr = mrr * 12;
 
     const [
+      mrr,
       monthlyRevenue,
       annualRevenue,
       totalRevenue,
@@ -445,6 +444,7 @@ export class AnalyticsService {
       revenueTrend,
       subscriptionDistribution,
     ] = await Promise.all([
+      this.revenueService.getMrr(access, filter),
       this.revenueService.getMonthlyRevenue(scope),
       this.revenueService.getAnnualRevenue(scope),
       this.revenueService.getTotalRevenue(scope),
@@ -456,6 +456,8 @@ export class AnalyticsService {
       ),
       this.getSubscriptionDistribution(access, filter),
     ]);
+
+    const arr = mrr * 12;
 
     return {
       summary: {
@@ -476,29 +478,28 @@ export class AnalyticsService {
     filter: AnalyticsFilterDto,
   ) {
     const scope = resolveScope(access, filter);
-    const groups = await (this.prisma as any).organizationSubscription.groupBy({
-      by: ['status'],
-      where: baseScopeWhere(scope),
-      _count: { _all: true },
-    });
-
-    const plans = await (this.prisma as any).subscriptionPlan.findMany({
-      select: { id: true, name: true, planType: true },
-    });
-    const planCounts = await (
-      this.prisma as any
-    ).organizationSubscription.groupBy({
-      by: ['planId'],
-      where: baseScopeWhere(scope),
-      _count: { _all: true },
-    });
+    const [groups, plans, planCounts] = await Promise.all([
+      (this.prisma as any).organizationSubscription.groupBy({
+        by: ['status'],
+        where: baseScopeWhere(scope),
+        _count: { _all: true },
+      }),
+      (this.prisma as any).subscriptionPlan.findMany({
+        select: { id: true, name: true, type: true },
+      }),
+      (this.prisma as any).organizationSubscription.groupBy({
+        by: ['planId'],
+        where: baseScopeWhere(scope),
+        _count: { _all: true },
+      }),
+    ]);
 
     return {
       byStatus: groups,
       byPlan: plans.map((plan: any) => ({
         planId: plan.id,
         name: plan.name,
-        planType: plan.planType,
+        planType: plan.type,
         count:
           planCounts.find((p: any) => p.planId === plan.id)?._count?._all ?? 0,
       })),
@@ -518,7 +519,7 @@ export class AnalyticsService {
       createdAt: { gte: from, lte: to },
     };
 
-    const [total, active, byStatus, growth] = await Promise.all([
+    const [total, active, byStatus, growth, recent] = await Promise.all([
       (this.prisma as any).user.count({ where }),
       (this.prisma as any).user.count({
         where: { ...where, status: 'ACTIVE' },
@@ -529,22 +530,21 @@ export class AnalyticsService {
         _count: { _all: true },
       }),
       this.customerGrowth(scope, filter),
+      (this.prisma as any).user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          status: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      }),
     ]);
-
-    const recent = await (this.prisma as any).user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        status: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
-    });
 
     return {
       summary: { total, active },
@@ -597,47 +597,42 @@ export class AnalyticsService {
       ...(filter.organizationId ? { id: filter.organizationId } : {}),
     };
 
-    const [total, byStatus, growth] = await Promise.all([
-      (this.prisma as any).organization.count({ where }),
-      (this.prisma as any).organization.groupBy({
-        by: ['status'],
-        where,
-        _count: { _all: true },
-      }),
-      this.organizationGrowth(filter),
-    ]);
-
-    const activeSubs = await (
-      this.prisma as any
-    ).organizationSubscription.count({
-      where: { status: { in: ['ACTIVE', 'PAST_DUE'] } },
-    });
-    const trialOrgs = await (this.prisma as any).organizationSubscription.count(
-      {
-        where: { status: 'TRIAL' },
-      },
-    );
-
-    const recent = await (this.prisma as any).organization.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        status: true,
-        createdAt: true,
-        subscriptions: {
-          take: 1,
+    const [total, byStatus, growth, activeSubs, trialOrgs, recent] =
+      await Promise.all([
+        (this.prisma as any).organization.count({ where }),
+        (this.prisma as any).organization.groupBy({
+          by: ['status'],
+          where,
+          _count: { _all: true },
+        }),
+        this.organizationGrowth(filter),
+        (this.prisma as any).organizationSubscription.count({
+          where: { status: { in: ['ACTIVE', 'PAST_DUE'] } },
+        }),
+        (this.prisma as any).organizationSubscription.count({
+          where: { status: 'TRIALING' },
+        }),
+        (this.prisma as any).organization.findMany({
+          where,
           orderBy: { createdAt: 'desc' },
+          take: 10,
           select: {
+            id: true,
+            name: true,
+            slug: true,
             status: true,
-            plan: { select: { name: true, planType: true } },
+            createdAt: true,
+            subscriptions: {
+              take: 1,
+              orderBy: { createdAt: 'desc' },
+              select: {
+                status: true,
+                plan: { select: { name: true, type: true } },
+              },
+            },
           },
-        },
-      },
-    });
+        }),
+      ]);
 
     return {
       summary: {
@@ -792,7 +787,12 @@ export class AnalyticsService {
     const scope = resolveScope(access, filter);
     const { from, to } = resolveRange(filter.dateFrom, filter.dateTo);
     const agents = await (this.prisma as any).user.findMany({
-      where: { ...baseScopeWhere(scope), role: 'AGENT', status: 'ACTIVE' },
+      where: {
+        ...baseScopeWhere(scope),
+        role: 'SUPPORT_AGENT',
+        status: 'ACTIVE',
+        ...(scope.agentId ? { id: scope.agentId } : {}),
+      },
       select: { id: true, firstName: true, lastName: true, email: true },
     });
 
@@ -805,14 +805,14 @@ export class AnalyticsService {
         assignedToId: true,
         createdAt: true,
         resolvedAt: true,
-        firstResponseAt: true,
+        firstRespondedAt: true,
       },
     });
 
     const rows = agents.map((agent: any) => {
       const assigned = tickets.filter((t: any) => t.assignedToId === agent.id);
       const resolved = assigned.filter((t: any) => t.resolvedAt);
-      const responded = assigned.filter((t: any) => t.firstResponseAt);
+      const responded = assigned.filter((t: any) => t.firstRespondedAt);
 
       const avg = (list: any[], pick: (t: any) => Date | null) => {
         if (!list.length) return 0;
@@ -833,7 +833,7 @@ export class AnalyticsService {
         assignedTickets: assigned.length,
         resolvedTickets: resolved.length,
         avgResolutionTimeMinutes: avg(resolved, (t) => t.resolvedAt),
-        avgResponseTimeMinutes: avg(responded, (t) => t.firstResponseAt),
+        avgResponseTimeMinutes: avg(responded, (t) => t.firstRespondedAt),
       };
     });
 
@@ -960,8 +960,8 @@ export class AnalyticsService {
             createdAt: true,
             resolvedAt: true,
             closedAt: true,
-            dueDate: true,
-            firstResponseAt: true,
+            dueAt: true,
+            firstRespondedAt: true,
             createdBy: {
               select: { firstName: true, lastName: true, email: true },
             },
@@ -981,10 +981,10 @@ export class AnalyticsService {
             createdBy: this.fullName(r.createdBy),
             assignedTo: this.fullName(r.assignedTo),
             createdAt: r.createdAt,
-            firstRespondedAt: r.firstResponseAt,
+            firstRespondedAt: r.firstRespondedAt,
             resolvedAt: r.resolvedAt,
             closedAt: r.closedAt,
-            dueAt: r.dueDate,
+            dueAt: r.dueAt,
           })),
           summary: await this.getTickets(access, filter),
         };
@@ -995,7 +995,7 @@ export class AnalyticsService {
           ...baseScopeWhere(scope),
           submittedAt: { gte: from, lte: to },
           ...(filter.feedbackRating
-            ? { rating: this.feedbackRatingToEnum(filter.feedbackRating) }
+            ? { rating: filter.feedbackRating }
             : {}),
         };
         const responses = await (this.prisma as any).ticketFeedback.findMany({
@@ -1067,7 +1067,6 @@ export class AnalyticsService {
           select: {
             status: true,
             billingInterval: true,
-            seats: true,
             currentPeriodStart: true,
             currentPeriodEnd: true,
             trialEndsAt: true,
@@ -1075,7 +1074,7 @@ export class AnalyticsService {
             plan: {
               select: {
                 name: true,
-                planType: true,
+                type: true,
                 priceMonthly: true,
                 priceYearly: true,
               },
@@ -1087,12 +1086,11 @@ export class AnalyticsService {
           rows: subs.map((r: any) => ({
             organization: r.organization?.name ?? '',
             plan: r.plan?.name ?? '',
-            planType: r.plan?.planType ?? '',
+            planType: r.plan?.type ?? '',
             priceMonthly: toNumber(r.plan?.priceMonthly),
             priceYearly: toNumber(r.plan?.priceYearly),
             billingInterval: r.billingInterval,
             status: r.status,
-            seats: r.seats,
             currentPeriodStart: r.currentPeriodStart,
             currentPeriodEnd: r.currentPeriodEnd,
             trialEndsAt: r.trialEndsAt,
@@ -1114,7 +1112,7 @@ export class AnalyticsService {
             name: true,
             slug: true,
             status: true,
-            email: true,
+            billingEmail: true,
             createdAt: true,
             subscriptions: {
               take: 1,
@@ -1129,7 +1127,7 @@ export class AnalyticsService {
             name: r.name,
             slug: r.slug,
             status: r.status,
-            email: r.email,
+            email: r.billingEmail,
             plan: r.subscriptions?.[0]?.plan?.name ?? 'None',
             subscriptionStatus: r.subscriptions?.[0]?.status ?? null,
             createdAt: r.createdAt,
@@ -1250,17 +1248,6 @@ export class AnalyticsService {
       if (!Number.isNaN(parsed)) return parsed;
     }
     return 0;
-  }
-
-  private feedbackRatingToEnum(rating: number): string | null {
-    const mapped: Record<number, string> = {
-      1: 'VERY_UNSATISFIED',
-      2: 'UNSATISFIED',
-      3: 'NEUTRAL',
-      4: 'SATISFIED',
-      5: 'VERY_SATISFIED',
-    };
-    return mapped[rating] ?? null;
   }
 
   private fullName(user: any): string {

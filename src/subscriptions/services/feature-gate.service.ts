@@ -16,6 +16,39 @@ export interface PlanEntitlements {
 }
 
 /**
+ * Core features every tenant needs to operate the product. These are applied
+ * as defaults whenever a plan record (or the no-subscription fallback) does
+ * not explicitly enable them, so a freshly registered organization is never
+ * bricked just because a plan row was created with an empty features map.
+ * Explicitly-set values (true or false) in the plan always win.
+ */
+const BASELINE_FEATURES: Record<string, boolean> = {
+  ticket_management: true,
+  customer_portal: true,
+  knowledge_base: true,
+  feedback: true,
+};
+
+/**
+ * Minimum usable limits for the FREE tier (and the no-subscription fallback).
+ * Plan rows created with zero/unset limits would otherwise block core flows
+ * (e.g. "does not allow max tickets per month"); these floor values keep a
+ * fresh FREE tenant functional. Explicitly configured limits win when higher.
+ */
+const FREE_BASELINE_LIMITS: Record<string, number> = {
+  maxUsers: 5,
+  maxAgents: 5,
+  maxCustomers: 100,
+  maxTicketsPerMonth: 100,
+  maxFeedbackForms: 5,
+  maxAttachmentsPerTicket: 10,
+  maxKnowledgeArticles: 50,
+  maxInvitations: 20,
+  storageLimitBytes: 500 * 1024 * 1024, // 500 MB
+  apiMonthlyQuota: 1000,
+};
+
+/**
  * Reusable gate that resolves an organization's plan entitlements and enforces
  * feature flags + hard usage limits. Tickets, Feedback, Knowledge Base, and
  * other modules inject this service instead of hardcoding plan logic.
@@ -53,24 +86,14 @@ export class FeatureGateService {
     });
 
     if (!freePlan) {
-      // Degrade gracefully: allow everything rather than bricking the tenant.
+      // Degrade gracefully: keep the FREE tier functional rather than
+      // bricking the tenant with empty entitlements.
       return {
         planId: null,
         planCode: 'FREE',
         planName: 'Free',
-        features: {},
-        limits: {
-          maxUsers: Number.MAX_SAFE_INTEGER,
-          maxCustomers: Number.MAX_SAFE_INTEGER,
-          maxAgents: Number.MAX_SAFE_INTEGER,
-          maxTicketsPerMonth: Number.MAX_SAFE_INTEGER,
-          maxFeedbackForms: Number.MAX_SAFE_INTEGER,
-          maxAttachmentsPerTicket: Number.MAX_SAFE_INTEGER,
-          maxKnowledgeArticles: Number.MAX_SAFE_INTEGER,
-          maxInvitations: Number.MAX_SAFE_INTEGER,
-          storageLimitBytes: Number.MAX_SAFE_INTEGER,
-          apiMonthlyQuota: Number.MAX_SAFE_INTEGER,
-        },
+        features: { ...BASELINE_FEATURES },
+        limits: { ...FREE_BASELINE_LIMITS },
       };
     }
 
@@ -78,6 +101,8 @@ export class FeatureGateService {
   }
 
   private toEntitlements(plan: any): PlanEntitlements {
+    const isFreePlan = plan.code === 'FREE';
+
     const limits: Record<string, number> = {
       maxUsers: plan.maxUsers ?? 0,
       maxCustomers: plan.maxCustomers ?? 0,
@@ -91,10 +116,28 @@ export class FeatureGateService {
       apiMonthlyQuota: plan.apiMonthlyQuota ?? 0,
     };
 
-    const features =
+    // Floor the FREE tier's baseline limits so zero/unset values don't block
+    // core flows; explicitly configured (higher) values win.
+    if (isFreePlan) {
+      for (const key of Object.keys(FREE_BASELINE_LIMITS)) {
+        limits[key] = Math.max(
+          limits[key] ?? 0,
+          FREE_BASELINE_LIMITS[key],
+        );
+      }
+    }
+
+    const explicitFeatures =
       typeof plan.features === 'object' && plan.features !== null
         ? (plan.features as Record<string, boolean>)
         : {};
+
+    // Baseline core features are on by default; an explicit value in the plan
+    // record (true or false) always overrides them.
+    const features: Record<string, boolean> = {
+      ...BASELINE_FEATURES,
+      ...explicitFeatures,
+    };
 
     return {
       planId: plan.id,

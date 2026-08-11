@@ -127,8 +127,13 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 // ============================================================================
 
 async function seedPlatformAdmin() {
-  const email = "ADMIN_EMAIL"
-  const password = "ADMIN_PASSWORD"
+  // In production, credentials must come from the environment. Falling back to
+  // a known default password would seed a publicly-visible admin account.
+  if (process.env.NODE_ENV === "production" && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD)) {
+    throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set when NODE_ENV=production")
+  }
+  const email = process.env.ADMIN_EMAIL ?? "admin@supportflow.com"
+  const password = process.env.ADMIN_PASSWORD ?? "Admin@12H!456"
   const hashedPassword = await bcrypt.hash(password, 12);
 
   const existingAdmin = await prisma.user.findFirst({ where: { email } });

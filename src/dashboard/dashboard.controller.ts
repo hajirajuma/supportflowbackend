@@ -46,6 +46,7 @@ export class DashboardController {
     @Access() access: DashboardAccess,
     @Query() query: DashboardFilterDto,
   ) {
+    console.log("Access: ", access, " Query: ", query);
     return this.dashboardService.getDashboard(access, query);
   }
 

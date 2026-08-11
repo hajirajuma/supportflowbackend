@@ -242,11 +242,12 @@ export class NotificationService {
           data: params.data ?? undefined,
         },
       );
-      await this.realtimeService.emitUnreadCount(
-        recipient.userId,
-        params.organizationId,
-      );
     }
+
+    // Refresh unread-count badges with a single grouped query instead of one
+    // `notification.count` round-trip per recipient (N users -> N sequential
+    // DB calls used to saturate the TLS connection pool during broadcasts).
+    await this.refreshUnreadCounts(params.recipients.map((r) => r.userId));
 
     if (params.actorId) {
       await this.auditLogService.record({
@@ -261,6 +262,23 @@ export class NotificationService {
     }
 
     return rows.length;
+  }
+
+  private async refreshUnreadCounts(userIds: string[]): Promise<void> {
+    if (!userIds.length) return;
+    const counts = await (this.prisma as any).notification.groupBy({
+      by: ['userId'],
+      where: { userId: { in: userIds }, isRead: false, isArchived: false },
+      _count: { _all: true },
+    });
+    const byUser = new Map(
+      counts.map((row: any) => [row.userId, row._count._all]),
+    );
+    for (const userId of userIds) {
+      this.realtimeService.emitToUser(userId, 'notification.unreadCount', {
+        count: byUser.get(userId) ?? 0,
+      });
+    }
   }
 
   // --------------------------------------------------------------------------

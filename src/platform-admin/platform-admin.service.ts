@@ -142,6 +142,17 @@ export class PlatformAdminService {
             orderBy: { createdAt: 'desc' },
             include: { plan: true },
           },
+          users: {
+            where: { role: 'TENANT_OWNER', deletedAt: null },
+            take: 1,
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatarUrl: true,
+            },
+          },
           _count: {
             select: {
               users: true,

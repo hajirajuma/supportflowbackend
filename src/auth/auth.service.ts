@@ -20,6 +20,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { BrevoEmailService } from '../email/brevo.service';
 
 @Injectable()
@@ -39,7 +40,8 @@ export class AuthService {
     const tenantKey = `${normalizedSlug}-${randomUUID()}`;
     const passwordHash = await this.passwordService.hash(dto.password);
 
-    const existingUser = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
@@ -51,7 +53,8 @@ export class AuthService {
     let payload: any;
 
     try {
-      payload = await this.prisma.$transaction(async (tx: any) => {
+      // ✅ Fixed: Removed (this.prisma as any)
+      payload = await this.prisma.$transaction(async (tx) => {
         const organization = await tx.organization.create({
           data: {
             name: dto.organizationName,
@@ -125,16 +128,15 @@ export class AuthService {
       throw error;
     }
 
-    // The account is committed. Email delivery is best-effort: a provider
-    // outage must never block registration (the user can request resend).
     try {
       await this.emailService.sendVerificationEmail(
         payload.user.email,
         payload.user.firstName,
         `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/verify-email?token=${verificationToken ?? ''}`,
       );
-    } catch {
-      // Swallow: verification email failures are surfaced by the resend flow.
+    } catch (error) {
+      console.error('FAILED TO SEND VERIFICATION EMAIL:', error);
+      throw error;
     }
 
     return {
@@ -145,8 +147,38 @@ export class AuthService {
     };
   }
 
+  async checkSubdomainAvailability(value: string) {
+    const normalized = (value ?? '').toLowerCase().trim();
+
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized)) {
+      throw new BadRequestException(
+        'Subdomain must be 1-63 lowercase letters, digits, or hyphens',
+      );
+    }
+
+    // ✅ Fixed: Removed (this.prisma as any)
+    const existing = await this.prisma.organization.findFirst({
+      where: {
+        OR: [{ subdomain: normalized }, { slug: SlugUtil.create(normalized) }],
+      },
+      select: { id: true },
+    });
+    return {
+      success: true,
+      data: {
+        subdomain: normalized,
+        available: !existing,
+        message: existing
+          ? 'This subdomain is already taken'
+          : 'This subdomain is available',
+        suggestion: existing ? `${normalized}-app` : undefined,
+      },
+    };
+  }
+
   async login(dto: LoginDto) {
-    const user = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
@@ -181,6 +213,7 @@ export class AuthService {
 
     const refreshToken = await this.refreshTokenService.createRefreshToken(
       user.id,
+      dto.rememberMe === true,
     );
 
     return {
@@ -206,7 +239,8 @@ export class AuthService {
       dto.refreshToken,
     );
 
-    const user = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const user = await this.prisma.user.findUnique({
       where: { id: payload.userId },
     });
 
@@ -247,7 +281,8 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
-    const user = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
@@ -279,12 +314,13 @@ export class AuthService {
     );
     const passwordHash = await this.passwordService.hash(dto.password);
 
-    await (this.prisma as any).user.update({
+    // ✅ Fixed: Removed (this.prisma as any)
+    await this.prisma.user.update({
       where: { id: tokenRecord.userId },
       data: { password: passwordHash },
     });
 
-    await (this.prisma as any).passwordResetToken.update({
+    await this.prisma.passwordResetToken.update({
       where: { id: tokenRecord.id },
       data: { usedAt: new Date() },
     });
@@ -297,27 +333,162 @@ export class AuthService {
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
-    const verificationToken = await this.emailVerificationService.validateToken(
+    const tokenRecord = await this.emailVerificationService.findByToken(
       dto.token,
     );
 
-    await (this.prisma as any).user.update({
-      where: { id: verificationToken.userId },
-      data: {
-        emailVerifiedAt: new Date(),
-        status: 'ACTIVE',
+    if (!tokenRecord) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    const isTokenUsable =
+      !tokenRecord.usedAt && tokenRecord.expiresAt > new Date();
+
+    // The token is scoped to a single user (and therefore a single
+    // organization/tenant). Look up the current state of that exact user so we
+    // only ever touch the record the login flow will later read.
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: tokenRecord.userId },
+      select: { emailVerifiedAt: true },
+    });
+
+    if (!currentUser) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    const alreadyVerified = !!currentUser.emailVerifiedAt;
+
+    // Idempotent: re-clicking a used/expired link for an already-verified
+    // account must still succeed instead of failing the whole flow.
+    if (!isTokenUsable && !alreadyVerified) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    if (isTokenUsable) {
+      await this.prisma.$transaction([
+        // Mark the correct user (and tenant) as verified using the same
+        // emailVerifiedAt field the login flow later checks.
+        this.prisma.user.update({
+          where: { id: tokenRecord.userId },
+          data: {
+            emailVerifiedAt: new Date(),
+            status: 'ACTIVE',
+          },
+        }),
+        // Invalidate/consume the token so it cannot be replayed.
+        this.prisma.emailVerificationToken.update({
+          where: { id: tokenRecord.id },
+          data: { usedAt: new Date() },
+        }),
+      ]);
+    }
+
+    // Auto-authenticate the tenant owner so the frontend can send them
+    // straight to their tenant dashboard without a second login.
+    const user = await this.prisma.user.findUnique({
+      where: { id: tokenRecord.userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        status: true,
+        organizationId: true,
+        emailVerifiedAt: true,
       },
     });
+
+    if (!user || !user.emailVerifiedAt) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    // Only mint a session when the presented token was still fresh. A used or
+    // expired token must never authenticate — a replayed link would otherwise
+    // become a permanent backdoor for the account. Already-verified users who
+    // re-click an old link (or whose account isn't ACTIVE) get a success
+    // response without credentials, and the frontend routes them to their
+    // dashboard (or the login page when no session exists).
+    if (!isTokenUsable || user.status !== 'ACTIVE') {
+      return {
+        success: true,
+        message: 'Email already verified',
+        data: { alreadyVerified: true },
+      };
+    }
+
+    const accessToken = await this.tokenService.signAccessToken({
+      userId: user.id,
+      organizationId: user.organizationId,
+      role: user.role,
+      email: user.email,
+    });
+
+    const refreshToken = await this.refreshTokenService.createRefreshToken(
+      user.id,
+      false,
+    );
 
     return {
       success: true,
       message: 'Email verified successfully',
+      data: {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          organizationId: user.organizationId,
+        },
+      },
+    };
+  }
+
+  async resendVerification(dto: ResendVerificationDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    // Do not leak whether an account exists. Already-verified accounts are a
+    // no-op so unverified users always get a fresh link.
+    if (!user || user.emailVerifiedAt) {
+      return {
+        success: true,
+        message:
+          'If the email exists and is not verified, a new verification link has been sent.',
+        data: null,
+      };
+    }
+
+    const verificationToken = await this.emailVerificationService.createToken(
+      user.id,
+    );
+
+    await this.emailService.sendVerificationEmail(
+      user.email,
+      user.firstName,
+      `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/verify-email?token=${verificationToken}`,
+    );
+
+    return {
+      success: true,
+      message: 'Verification email sent. Please check your inbox.',
       data: null,
     };
   }
 
   async getCurrentUser(userId: string) {
-    const user = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -343,7 +514,8 @@ export class AuthService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await (this.prisma as any).user.findUnique({
+    // ✅ Fixed: Removed (this.prisma as any)
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
@@ -361,7 +533,7 @@ export class AuthService {
 
     const newPasswordHash = await this.passwordService.hash(dto.newPassword);
 
-    await (this.prisma as any).user.update({
+    await this.prisma.user.update({
       where: { id: user.id },
       data: { password: newPasswordHash },
     });

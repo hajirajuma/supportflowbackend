@@ -33,11 +33,9 @@ export class InvitationService {
       throw new ConflictException('A user with this email already exists');
     }
 
-    const existingInvitation = await (this.prisma as any).invitation.findUnique(
-      {
-        where: { organizationId_email: { organizationId, email: dto.email } },
-      },
-    );
+    const existingInvitation = await (this.prisma as any).invitation.findFirst({
+      where: { organizationId, email: dto.email },
+    });
 
     if (existingInvitation && existingInvitation.status === 'PENDING') {
       throw new ConflictException(
@@ -46,8 +44,9 @@ export class InvitationService {
     }
 
     const token = randomBytes(32).toString('hex');
+    const ttlDays = dto.expiresIn ?? this.invitationTtlDays;
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + this.invitationTtlDays);
+    expiresAt.setDate(expiresAt.getDate() + ttlDays);
 
     const invitation = await (this.prisma as any).invitation.create({
       data: {
@@ -61,21 +60,39 @@ export class InvitationService {
       },
     });
 
-    await this.emailService.sendInvitationEmail(
-      dto.email,
-      dto.email,
-      `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/accept-invitation?token=${token}`,
-    );
+    const invitationLink = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/accept-invitation?token=${token}`;
+
+    let emailDelivered = false;
+    let emailError: string | null = null;
+    try {
+      await this.emailService.sendInvitationEmail(
+        dto.email,
+        dto.email,
+        invitationLink,
+      );
+      emailDelivered = true;
+    } catch (error) {
+      // The invitation row is already committed. An email outage (or an
+      // unverified Brevo sender) must not turn this into a 500 — instead we
+      // report the failure so the UI can offer the copy-link fallback.
+      emailError = error instanceof Error ? error.message : String(error);
+      console.error('Failed to send invitation email:', error);
+    }
 
     return {
       success: true,
-      message: 'Invitation sent successfully',
+      message: emailDelivered
+        ? 'Invitation sent successfully'
+        : 'Invitation created, but the invitation email could not be sent',
       data: {
         id: invitation.id,
         email: invitation.email,
         role: invitation.role,
         status: invitation.status,
         expiresAt: invitation.expiresAt,
+        emailDelivered,
+        emailError,
+        invitationLink,
       },
     };
   }
@@ -84,12 +101,30 @@ export class InvitationService {
     const invitations = await (this.prisma as any).invitation.findMany({
       where: { organizationId },
       orderBy: { createdAt: 'desc' },
+      include: {
+        invitedBy: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
     });
+
+    // Normalize role/status to lowercase so the frontend's Invitation type
+    // (pending/accepted/revoked + OrganizationRole) matches without crashing.
+    // Once a customer or support agent accepts, the invitation is never
+    // reported as "pending" — acceptedAt is authoritative even if the status
+    // column lags.
+    const data = invitations.map((inv: any) => ({
+      ...inv,
+      role: inv.role?.toLowerCase(),
+      status: inv.acceptedAt
+        ? 'accepted'
+        : inv.status?.toLowerCase(),
+    }));
 
     return {
       success: true,
       message: 'Invitations retrieved successfully',
-      data: invitations,
+      data,
     };
   }
 
@@ -115,16 +150,29 @@ export class InvitationService {
       data: { token, expiresAt },
     });
 
-    await this.emailService.sendInvitationEmail(
-      invitation.email,
-      invitation.email,
-      `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/accept-invitation?token=${token}`,
-    );
+    const invitationLink = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/accept-invitation?token=${token}`;
+
+    let emailDelivered = false;
+    try {
+      await this.emailService.sendInvitationEmail(
+        invitation.email,
+        invitation.email,
+        invitationLink,
+      );
+      emailDelivered = true;
+    } catch (error) {
+      console.error('Failed to resend invitation email:', error);
+    }
 
     return {
       success: true,
-      message: 'Invitation resent successfully',
-      data: null,
+      message: emailDelivered
+        ? 'Invitation resent successfully'
+        : 'Invitation updated, but the email could not be sent',
+      data: {
+        emailDelivered,
+        invitationLink,
+      },
     };
   }
 
@@ -158,6 +206,11 @@ export class InvitationService {
   async validateInvitationToken(token: string) {
     const invitation = await (this.prisma as any).invitation.findUnique({
       where: { token },
+      include: {
+        invitedBy: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
     });
 
     if (!invitation || invitation.status !== 'PENDING') {
@@ -172,15 +225,26 @@ export class InvitationService {
 
     const organization = await (this.prisma as any).organization.findUnique({
       where: { id: invitation.organizationId },
+      select: { name: true, subdomain: true },
     });
 
     return {
       success: true,
       message: 'Invitation is valid',
       data: {
+        token: invitation.token,
         email: invitation.email,
-        role: invitation.role,
+        role: invitation.role?.toLowerCase(),
         organizationName: organization?.name ?? null,
+        subdomain: organization?.subdomain ?? null,
+        expiresAt: invitation.expiresAt,
+        invitedBy: invitation.invitedBy
+          ? {
+              firstName: invitation.invitedBy.firstName,
+              lastName: invitation.invitedBy.lastName,
+              email: invitation.invitedBy.email,
+            }
+          : null,
       },
     };
   }
@@ -213,12 +277,12 @@ export class InvitationService {
     const user = await (this.prisma as any).user.create({
       data: {
         email: invitation.email,
-        passwordHash,
+        password: passwordHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
         role: invitation.role,
         status: 'ACTIVE',
-        emailVerified: true,
+        emailVerifiedAt: new Date(),
         organizationId: invitation.organizationId,
       },
     });
@@ -232,6 +296,15 @@ export class InvitationService {
       },
     });
 
+    // The invited user stays bound to the inviting organization (its id is
+    // set above), and the success payload carries the organization's name and
+    // subdomain so the frontend can send the user to that exact tenant's
+    // login page — never another organization's.
+    const organization = await (this.prisma as any).organization.findUnique({
+      where: { id: invitation.organizationId },
+      select: { name: true, subdomain: true },
+    });
+
     return {
       success: true,
       message: 'Invitation accepted successfully',
@@ -242,6 +315,8 @@ export class InvitationService {
         lastName: user.lastName,
         role: user.role,
         organizationId: user.organizationId,
+        organizationName: organization?.name ?? null,
+        subdomain: organization?.subdomain ?? null,
       },
     };
   }

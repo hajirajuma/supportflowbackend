@@ -18,6 +18,7 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  app.enableCors()
   const config = app.get(ConfigService);
   const logger = app.get(LoggerService);
   app.useLogger(logger);

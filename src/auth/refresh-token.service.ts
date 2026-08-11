@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { createHash, randomUUID } from 'node:crypto';
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REMEMBER_ME_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /**
  * Refresh tokens are stored as SHA-256 digests so a database leak never
@@ -17,7 +18,7 @@ export class RefreshTokenService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  async createRefreshToken(userId: string) {
+  async createRefreshToken(userId: string, rememberMe = false) {
     const token = randomUUID();
     const tokenHash = RefreshTokenService.hashToken(token);
 
@@ -25,7 +26,9 @@ export class RefreshTokenService {
       data: {
         token: tokenHash,
         userId,
-        expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+        expiresAt: new Date(
+          Date.now() + (rememberMe ? REMEMBER_ME_TTL_MS : REFRESH_TOKEN_TTL_MS),
+        ),
       },
     });
 
