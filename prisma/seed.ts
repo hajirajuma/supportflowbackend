@@ -352,7 +352,7 @@ async function seedSystemSettings() {
 
 async function seedFeedbackCategories() {
   const organization = await prisma.organization.upsert({
-    where: { subdomain: 'platform' },
+    where: { slug: 'platform-administration' },
     update: {
       name: 'Platform Administration',
       slug: 'platform-administration',
@@ -363,7 +363,6 @@ async function seedFeedbackCategories() {
     create: {
       name: 'Platform Administration',
       slug: 'platform-administration',
-      subdomain: 'platform',
       tenantKey: 'platform-admin',
       website: 'https://supportflow.local',
       timezone: 'UTC',

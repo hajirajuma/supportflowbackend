@@ -545,8 +545,6 @@ model Organization {
   id                   String               @id @default(cuid())
   name                 String
   slug                 String               @unique
-  subdomain            String               @unique
-  customDomain         String?              @unique
   tenantKey            String               @unique
   website              String?
   logo                 String?
@@ -598,8 +596,6 @@ model Organization {
   notificationTemplates NotificationTemplate[]
 
   @@index([slug])
-  @@index([subdomain])
-  @@index([customDomain])
   @@index([tenantKey])
   @@index([status])
   @@index([deletedAt])
