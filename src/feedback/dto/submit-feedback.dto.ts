@@ -60,5 +60,8 @@ export class SubmitFeedbackDto {
     items: { type: 'string', format: 'binary' },
     description: 'Optional supporting attachments (up to 10)',
   })
+  // `files` is populated by the FilesInterceptor for multipart submissions; it
+  // needs a validator decorator so forbidNonWhitelisted validation accepts it.
+  @IsOptional()
   files?: UploadedFile[];
 }

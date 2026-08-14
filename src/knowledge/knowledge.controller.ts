@@ -17,7 +17,6 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestContextService } from '../request-context/request-context.service';
@@ -44,7 +43,6 @@ export class KnowledgeController {
   ) {}
 
   @Get()
-  @Public()
   @ApiOperation({ summary: 'Get knowledge base overview' })
   async getOverview() {
     const organizationId = this.resolveOrganizationId();
@@ -52,7 +50,6 @@ export class KnowledgeController {
   }
 
   @Get('categories')
-  @Public()
   @ApiOperation({ summary: 'List knowledge base categories' })
   async getCategories() {
     const organizationId = this.resolveOrganizationId();
@@ -114,7 +111,6 @@ export class KnowledgeController {
   }
 
   @Get('articles')
-  @Public()
   @ApiOperation({ summary: 'List and search knowledge articles' })
   async listArticles(
     @CurrentUser() user: CustomerRequestUser | null,
@@ -129,7 +125,6 @@ export class KnowledgeController {
   }
 
   @Get('search')
-  @Public()
   @ApiOperation({ summary: 'Search knowledge articles' })
   async searchArticles(
     @CurrentUser() user: CustomerRequestUser | null,
@@ -144,7 +139,6 @@ export class KnowledgeController {
   }
 
   @Get('articles/:id')
-  @Public()
   @ApiOperation({ summary: 'Get a knowledge article' })
   @ApiParam({ name: 'id', type: 'string' })
   async getArticle(
@@ -283,7 +277,6 @@ export class KnowledgeController {
   }
 
   @Get('articles/:id/comments')
-  @Public()
   @ApiOperation({ summary: 'List article comments' })
   @ApiParam({ name: 'id', type: 'string' })
   async listComments(@Param('id') id: string) {
