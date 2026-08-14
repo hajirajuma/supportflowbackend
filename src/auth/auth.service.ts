@@ -36,7 +36,6 @@ export class AuthService {
 
   async registerOrganization(dto: RegisterOrganizationDto) {
     const normalizedSlug = SlugUtil.create(dto.organizationName);
-    const subdomain = dto.subdomain ?? normalizedSlug;
     const tenantKey = `${normalizedSlug}-${randomUUID()}`;
     const passwordHash = await this.passwordService.hash(dto.password);
 
@@ -59,7 +58,6 @@ export class AuthService {
           data: {
             name: dto.organizationName,
             slug: normalizedSlug,
-            subdomain,
             tenantKey,
             website: dto.website,
             timezone: dto.timezone ?? 'UTC',
@@ -147,35 +145,6 @@ export class AuthService {
     };
   }
 
-  async checkSubdomainAvailability(value: string) {
-    const normalized = (value ?? '').toLowerCase().trim();
-
-    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized)) {
-      throw new BadRequestException(
-        'Subdomain must be 1-63 lowercase letters, digits, or hyphens',
-      );
-    }
-
-    // ✅ Fixed: Removed (this.prisma as any)
-    const existing = await this.prisma.organization.findFirst({
-      where: {
-        OR: [{ subdomain: normalized }, { slug: SlugUtil.create(normalized) }],
-      },
-      select: { id: true },
-    });
-    return {
-      success: true,
-      data: {
-        subdomain: normalized,
-        available: !existing,
-        message: existing
-          ? 'This subdomain is already taken'
-          : 'This subdomain is available',
-        suggestion: existing ? `${normalized}-app` : undefined,
-      },
-    };
-  }
-
   async login(dto: LoginDto) {
     // ✅ Fixed: Removed (this.prisma as any)
     const user = await this.prisma.user.findUnique({
@@ -206,6 +175,7 @@ export class AuthService {
 
     const accessToken = await this.tokenService.signAccessToken({
       userId: user.id,
+      tenantId: user.organizationId,
       organizationId: user.organizationId,
       role: user.role,
       email: user.email,
@@ -250,6 +220,7 @@ export class AuthService {
 
     const accessToken = await this.tokenService.signAccessToken({
       userId: user.id,
+      tenantId: user.organizationId,
       organizationId: user.organizationId,
       role: user.role,
       email: user.email,
@@ -419,6 +390,7 @@ export class AuthService {
 
     const accessToken = await this.tokenService.signAccessToken({
       userId: user.id,
+      tenantId: user.organizationId,
       organizationId: user.organizationId,
       role: user.role,
       email: user.email,

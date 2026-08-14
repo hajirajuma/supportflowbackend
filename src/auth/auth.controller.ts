@@ -6,7 +6,6 @@ import {
   Post,
   Request,
   UseGuards,
-  Param,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -46,15 +45,6 @@ export class AuthController {
   @ApiBody({ type: RegisterOrganizationDto })
   async register(@Body() dto: RegisterOrganizationDto) {
     return this.authService.registerOrganization(dto);
-  }
-
-  @Public()
-  @Get('subdomain-availability/:subdomain')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Check whether a subdomain is available' })
-  @ApiResponse({ status: 200, description: 'Subdomain availability returned' })
-  async checkSubdomainAvailability(@Param('subdomain') subdomain: string) {
-    return this.authService.checkSubdomainAvailability(subdomain);
   }
 
   @Public()

@@ -13,11 +13,6 @@ export class RegisterOrganizationDto {
   @IsNotEmpty()
   organizationName!: string;
 
-  @ApiProperty({ example: 'acme' })
-  @IsOptional()
-  @IsString()
-  subdomain?: string;
-
   @ApiProperty({ example: 'https://acme.com' })
   @IsOptional()
   @IsString()
