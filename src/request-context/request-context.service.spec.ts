@@ -19,7 +19,6 @@ describe('RequestContextService', () => {
       userId: 'u-1',
       organizationId: 'org-1',
       role: 'SUPPORT_AGENT',
-      subdomain: 'acme',
     };
 
     const seen = service.run(snapshot, () => ({
@@ -27,16 +26,12 @@ describe('RequestContextService', () => {
       orgId: service.getCurrentOrganizationId(),
       userId: service.getCurrentUserId(),
       role: service.getCurrentRole(),
-      subdomain: service.getCurrentSubdomain(),
-      tenant: service.getCurrentTenant(),
     }));
 
     expect(seen.current?.requestId).toBe('req-1');
     expect(seen.orgId).toBe('org-1');
     expect(seen.userId).toBe('u-1');
     expect(seen.role).toBe('SUPPORT_AGENT');
-    expect(seen.subdomain).toBe('acme');
-    expect(seen.tenant).toBeUndefined();
   });
 
   it('isolates concurrent runs (no cross-request leakage)', async () => {

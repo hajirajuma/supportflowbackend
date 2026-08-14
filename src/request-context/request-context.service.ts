@@ -7,8 +7,6 @@ export type RequestContextSnapshot = {
   userId?: string;
   organizationId?: string;
   role?: string;
-  subdomain?: string;
-  tenant?: { id?: string; subdomain?: string; customDomain?: string };
   request?: Request;
   response?: Response;
 };
@@ -21,6 +19,11 @@ export type RequestContextSnapshot = {
  * which would make every global guard that depends on it (e.g. JwtAuthGuard)
  * request-scoped too — and Nest instantiates request-scoped global enhancers
  * from `Object.create` prototypes, so their constructor/DI never runs.
+ *
+ * Tenant isolation: the organizationId in the context is populated ONLY from
+ * the authenticated user's database record (JwtAuthGuard <- JwtStrategy), never
+ * from client-supplied values or host headers. There is no subdomain-based
+ * tenant resolution anywhere in the application.
  */
 @Injectable()
 export class RequestContextService {
@@ -44,14 +47,6 @@ export class RequestContextService {
 
   getCurrentRole(): string | undefined {
     return this.getCurrent()?.role;
-  }
-
-  getCurrentSubdomain(): string | undefined {
-    return this.getCurrent()?.subdomain;
-  }
-
-  getCurrentTenant(): RequestContextSnapshot['tenant'] | undefined {
-    return this.getCurrent()?.tenant;
   }
 
   getRequest(): Request | undefined {

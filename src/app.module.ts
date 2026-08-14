@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -8,7 +8,6 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
-import { TenantMiddleware } from './common/middleware/tenant.middleware';
 
 import configuration from './config/configuration';
 import validate from './config/env.validation';
@@ -71,7 +70,6 @@ import { OrganizationModule } from './organizations/organization.module';
   controllers: [AppController],
   providers: [
     AppService,
-    TenantMiddleware,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
@@ -86,8 +84,4 @@ import { OrganizationModule } from './organizations/organization.module';
     },
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TenantMiddleware).forRoutes('*');
-  }
-}
+export class AppModule {}

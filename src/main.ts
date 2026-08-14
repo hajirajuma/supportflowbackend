@@ -12,13 +12,21 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { RequestContextService } from './request-context/request-context.service';
 import { LoggerService } from './logger/logger.service';
 
+// Prisma returns BigInt for large integer columns (e.g. subscription_plans.storageLimitBytes).
+// JSON.stringify throws "Do not know how to serialize a BigInt", which 500s every endpoint
+// that returns raw Prisma rows (subscription plans, file aggregates, ...). Serialize BigInt
+// as a Number so those payloads survive; values fit comfortably within Number.MAX_SAFE_INTEGER.
+(BigInt.prototype as unknown as { toJSON: () => number }).toJSON = function () {
+  return Number(this);
+};
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
 
-  app.enableCors()
+  app.enableCors();
   const config = app.get(ConfigService);
   const logger = app.get(LoggerService);
   app.useLogger(logger);
@@ -31,10 +39,10 @@ async function bootstrap() {
 
   // Request-context bootstrap: captures a requestId and exposes the
   // AsyncLocalStorage scope for the whole request lifecycle. User/tenant data
-  // is populated later by JwtAuthGuard (user) and TenantMiddleware (tenant).
+  // is populated later by JwtAuthGuard from the authenticated user's database
+  // record — there is no host-header/subdomain tenant resolution.
   app.use((req, res, next) => {
     const request = req;
-    const host = request.headers.host ?? '';
 
     return requestContextService.run(
       {
@@ -43,8 +51,6 @@ async function bootstrap() {
           randomUUID(),
         request,
         response: res,
-        subdomain:
-          host.split('.')[0] === 'localhost' ? undefined : host.split('.')[0],
       },
       () => next(),
     );
