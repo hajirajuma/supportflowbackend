@@ -20,6 +20,13 @@ export class PlatformAdminQueryDto extends PaginationQueryDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({
+    description: 'Filter organizations by subscription plan code (e.g. PRO)',
+  })
+  @IsOptional()
+  @IsString()
+  plan?: string;
+
   @ApiPropertyOptional({ example: 'desc', enum: SORT_ORDER })
   @IsOptional()
   @IsIn(SORT_ORDER)

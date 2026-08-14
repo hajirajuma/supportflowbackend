@@ -32,10 +32,6 @@ import { CreatePlatformUserDto } from './dto/create-platform-user.dto';
 import { UpdatePlatformUserDto } from './dto/update-platform-user.dto';
 import { UpdatePlatformSettingDto } from './dto/platform-admin-setting.dto';
 import { TransferOrganizationOwnershipDto } from './dto/transfer-organization-ownership.dto';
-import {
-  UpdateSubdomainDto,
-  ToggleSubdomainLockDto,
-} from './dto/subdomain.dto';
 import { CreatePlanDto } from '../subscriptions/dto/create-plan.dto';
 import { UpdatePlanDto } from '../subscriptions/dto/update-plan.dto';
 import {
@@ -187,68 +183,6 @@ export class PlatformAdminController {
     @Param('id') id: string,
   ) {
     return this.platformAdminService.listOrganizationUsers(access, id);
-  }
-
-  @Get('subdomains/check')
-  checkSubdomain(
-    @Access() access: DashboardAccess,
-    @Query('value') value: string,
-  ) {
-    return this.platformAdminService.checkSubdomain(access, value);
-  }
-
-  @Get('subdomains')
-  listSubdomains(@Access() access: DashboardAccess) {
-    return this.platformAdminService.listSubdomains(access);
-  }
-
-  @Patch('organizations/:id/subdomain')
-  @ApiBody({ type: UpdateSubdomainDto })
-  renameSubdomain(
-    @Access() access: DashboardAccess,
-    @Param('id') id: string,
-    @Body() dto: UpdateSubdomainDto,
-    @Req() request: Request,
-  ) {
-    return this.platformAdminService.renameSubdomain(access, id, dto, request);
-  }
-
-  @Post('organizations/:id/subdomain/lock')
-  lockSubdomain(
-    @Access() access: DashboardAccess,
-    @Param('id') id: string,
-    @Body() dto: ToggleSubdomainLockDto,
-    @Req() request: Request,
-  ) {
-    return this.platformAdminService.lockSubdomain(access, id, dto, request);
-  }
-
-  @Post('organizations/:id/subdomain/release')
-  releaseSubdomain(
-    @Access() access: DashboardAccess,
-    @Param('id') id: string,
-    @Body() dto: ToggleSubdomainLockDto,
-    @Req() request: Request,
-  ) {
-    return this.platformAdminService.releaseSubdomain(access, id, dto, request);
-  }
-
-  @Post('organizations/:id/subdomain/approve')
-  approveSubdomain(
-    @Access() access: DashboardAccess,
-    @Param('id') id: string,
-    @Req() request: Request,
-  ) {
-    return this.platformAdminService.approveSubdomain(access, id, request);
-  }
-
-  @Post('organizations/:id/subdomain/reject')
-  rejectSubdomain(
-    @Access() access: DashboardAccess,
-    @Param('id') id: string,
-    @Req() request: Request,
-  ) {
-    return this.platformAdminService.rejectSubdomain(access, id, request);
   }
 
   @Get('users')

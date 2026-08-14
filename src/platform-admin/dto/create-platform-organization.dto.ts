@@ -11,11 +11,6 @@ export class CreatePlatformOrganizationDto {
   @IsString()
   slug?: string;
 
-  @ApiPropertyOptional({ example: 'support.acme.com' })
-  @IsOptional()
-  @IsString()
-  subdomain?: string;
-
   @ApiPropertyOptional({ example: 'https://acme.com' })
   @IsOptional()
   @IsUrl()

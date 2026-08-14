@@ -16,10 +16,6 @@ import { CreatePlatformUserDto } from './dto/create-platform-user.dto';
 import { UpdatePlatformUserDto } from './dto/update-platform-user.dto';
 import { UpdatePlatformSettingDto } from './dto/platform-admin-setting.dto';
 import { TransferOrganizationOwnershipDto } from './dto/transfer-organization-ownership.dto';
-import {
-  UpdateSubdomainDto,
-  ToggleSubdomainLockDto,
-} from './dto/subdomain.dto';
 import { CreatePlanDto } from '../subscriptions/dto/create-plan.dto';
 import { UpdatePlanDto } from '../subscriptions/dto/update-plan.dto';
 import {
@@ -72,7 +68,6 @@ export class PlatformAdminService {
           id: true,
           name: true,
           slug: true,
-          subdomain: true,
           status: true,
           createdAt: true,
         },
@@ -122,11 +117,19 @@ export class PlatformAdminService {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { slug: { contains: query.search, mode: 'insensitive' } },
-        { subdomain: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.status) {
-      where.status = query.status;
+      // The UI sends lowercase statuses; the DB stores uppercase enums. Normalize
+      // so e.g. ?status=active matches ACTIVE instead of erroring in Prisma.
+      where.status = this.normalizeEnumValue(query.status);
+    }
+    if (query.plan) {
+      where.subscriptions = {
+        some: {
+          plan: { code: this.normalizeEnumValue(query.plan) },
+        },
+      };
     }
 
     const [items, total] = await Promise.all([
@@ -212,16 +215,12 @@ export class PlatformAdminService {
     const slug = await this.ensureUniqueOrganizationSlug(
       dto.slug?.trim() || SlugUtil.create(name),
     );
-    const subdomain = await this.ensureUniqueSubdomain(
-      dto.subdomain?.trim() || slug,
-    );
     const tenantKey = `${slug}-${randomUUID()}`;
 
     const organization = await (this.prisma as any).organization.create({
       data: {
         name,
         slug,
-        subdomain,
         tenantKey,
         website: dto.website ?? null,
         timezone: dto.timezone ?? 'UTC',
@@ -250,7 +249,7 @@ export class PlatformAdminService {
       action: AUDIT_ACTIONS.CREATE,
       entityType: 'Organization',
       entityId: organization.id,
-      metadata: { name: organization.name, subdomain: organization.subdomain },
+      metadata: { name: organization.name },
       request,
     });
 
@@ -506,107 +505,6 @@ export class PlatformAdminService {
     return { items, total, page, limit };
   }
 
-  async listSubdomains(access: AdminAccess) {
-    this.assertPlatformAdmin(access);
-    return (this.prisma as any).organization.findMany({
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        subdomain: true,
-        customDomain: true,
-        status: true,
-        metadata: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async checkSubdomain(access: AdminAccess, value: string) {
-    this.assertPlatformAdmin(access);
-    const normalized = this.normalizeSubdomain(value);
-    const existing = await (this.prisma as any).organization.findFirst({
-      where: {
-        OR: [
-          { subdomain: normalized },
-          { slug: normalized },
-          { customDomain: value },
-        ],
-      },
-      select: { id: true },
-    });
-    return { value: normalized, available: !existing };
-  }
-
-  async renameSubdomain(
-    access: AdminAccess,
-    organizationId: string,
-    dto: UpdateSubdomainDto,
-    request?: Request,
-  ) {
-    this.assertPlatformAdmin(access);
-    const org = await this.requireOrganization(organizationId);
-    const subdomain = await this.ensureUniqueSubdomain(dto.value, org.id);
-    const updated = await (this.prisma as any).organization.update({
-      where: { id: org.id },
-      data: { subdomain },
-    });
-    await this.auditLogService.record({
-      actorId: access.userId,
-      actorEmail: access.email,
-      action: AUDIT_ACTIONS.UPDATE,
-      entityType: 'Organization',
-      entityId: org.id,
-      metadata: { subdomain },
-      request,
-    });
-    return updated;
-  }
-
-  async lockSubdomain(
-    access: AdminAccess,
-    organizationId: string,
-    dto: ToggleSubdomainLockDto = {},
-    request?: Request,
-  ) {
-    return this.setSubdomainLock(access, organizationId, true, dto, request);
-  }
-
-  async releaseSubdomain(
-    access: AdminAccess,
-    organizationId: string,
-    dto: ToggleSubdomainLockDto = {},
-    request?: Request,
-  ) {
-    return this.setSubdomainLock(access, organizationId, false, dto, request);
-  }
-
-  async approveSubdomain(
-    access: AdminAccess,
-    organizationId: string,
-    request?: Request,
-  ) {
-    return this.updateSubdomainState(
-      access,
-      organizationId,
-      'APPROVED',
-      request,
-    );
-  }
-
-  async rejectSubdomain(
-    access: AdminAccess,
-    organizationId: string,
-    request?: Request,
-  ) {
-    return this.updateSubdomainState(
-      access,
-      organizationId,
-      'REJECTED',
-      request,
-    );
-  }
-
   async listUsers(access: AdminAccess, query: PlatformAdminQueryDto) {
     this.assertPlatformAdmin(access);
     const page = PaginationUtil.normalizePage(query.page);
@@ -810,7 +708,11 @@ export class PlatformAdminService {
         code: dto.code,
         name: dto.name,
         description: dto.description ?? null,
-        planType: dto.planType ?? 'FREE',
+        // The Prisma model field is `type` (not `planType`). `type` is a UNIQUE
+        // column; the four seeded plans already occupy FREE/STARTER/PRO/
+        // ENTERPRISE, so custom plans default to the one remaining enum value
+        // instead of colliding with the seed data.
+        type: dto.planType ?? 'PROFESSIONAL',
         priceMonthly: dto.priceMonthly ?? 0,
         priceYearly: dto.priceYearly ?? 0,
         currency: dto.currency ?? 'USD',
@@ -826,7 +728,6 @@ export class PlatformAdminService {
         maxKnowledgeArticles: dto.maxKnowledgeArticles ?? 0,
         maxInvitations: dto.maxInvitations ?? 0,
         storageLimitBytes: BigInt(dto.storageLimitBytes ?? 0),
-        apiRateLimitPerMinute: dto.apiRateLimitPerMinute ?? 0,
         apiMonthlyQuota: dto.apiMonthlyQuota ?? 0,
         features: dto.features ?? {},
       },
@@ -850,15 +751,19 @@ export class PlatformAdminService {
     request?: Request,
   ) {
     this.assertPlatformAdmin(access);
+    const data: Record<string, unknown> = {
+      ...dto,
+      // DTO field is `planType`, Prisma model field is `type`.
+      type: dto.planType,
+      storageLimitBytes:
+        dto.storageLimitBytes !== undefined
+          ? BigInt(dto.storageLimitBytes)
+          : undefined,
+    };
+    delete data.planType;
     const plan = await (this.prisma as any).subscriptionPlan.update({
       where: { id },
-      data: {
-        ...dto,
-        storageLimitBytes:
-          dto.storageLimitBytes !== undefined
-            ? BigInt(dto.storageLimitBytes)
-            : undefined,
-      },
+      data,
     });
     await this.auditLogService.record({
       actorId: access.userId,
@@ -1463,59 +1368,8 @@ export class PlatformAdminService {
     return updated;
   }
 
-  private async setSubdomainLock(
-    access: AdminAccess,
-    organizationId: string,
-    locked: boolean,
-    dto: ToggleSubdomainLockDto,
-    request?: Request,
-  ) {
-    const org = await this.requireOrganization(organizationId);
-    const metadata = this.normalizeMetadata(org.metadata);
-    metadata.subdomainLocked = dto.locked ?? locked;
-    const updated = await (this.prisma as any).organization.update({
-      where: { id: org.id },
-      data: { metadata },
-    });
-    await this.auditLogService.record({
-      actorId: access.userId,
-      actorEmail: access.email,
-      action: AUDIT_ACTIONS.UPDATE,
-      entityType: 'Organization',
-      entityId: org.id,
-      metadata: { subdomainLocked: metadata.subdomainLocked },
-      request,
-    });
-    return updated;
-  }
-
-  private async updateSubdomainState(
-    access: AdminAccess,
-    organizationId: string,
-    state: string,
-    request?: Request,
-  ) {
-    const org = await this.requireOrganization(organizationId);
-    const metadata = this.normalizeMetadata(org.metadata);
-    metadata.subdomainState = state;
-    const updated = await (this.prisma as any).organization.update({
-      where: { id: org.id },
-      data: { metadata },
-    });
-    await this.auditLogService.record({
-      actorId: access.userId,
-      actorEmail: access.email,
-      action: AUDIT_ACTIONS.UPDATE,
-      entityType: 'Organization',
-      entityId: org.id,
-      metadata: { subdomainState: state },
-      request,
-    });
-    return updated;
-  }
-
   private async ensureUniqueOrganizationSlug(baseSlug: string) {
-    const normalized = this.normalizeSubdomain(baseSlug);
+    const normalized = SlugUtil.create(baseSlug);
     let candidate = normalized;
     let index = 1;
     while (
@@ -1530,30 +1384,8 @@ export class PlatformAdminService {
     return candidate;
   }
 
-  private async ensureUniqueSubdomain(
-    baseSubdomain: string,
-    excludeId?: string,
-  ) {
-    const normalized = this.normalizeSubdomain(baseSubdomain);
-    let candidate = normalized;
-    let index = 1;
-    while (
-      await (this.prisma as any).organization.findFirst({
-        where: {
-          subdomain: candidate,
-          ...(excludeId ? { id: { not: excludeId } } : {}),
-        },
-        select: { id: true },
-      })
-    ) {
-      candidate = `${normalized}-${index}`;
-      index += 1;
-    }
-    return candidate;
-  }
-
-  private normalizeSubdomain(value: string) {
-    return SlugUtil.create(value).replace(/^-+|-+$/g, '');
+  private normalizeEnumValue(value: string): string {
+    return (value ?? '').trim().toUpperCase();
   }
 
   private normalizeMetadata(metadata: unknown): Record<string, any> {
