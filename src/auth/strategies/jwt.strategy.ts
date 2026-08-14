@@ -26,8 +26,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException();
     }
 
+    // The tenant (organizationId) is always re-read from the database rather
+    // than trusted from the JWT, so a stale or tampered claim can never be
+    // used to move a user into another organization.
     return {
       userId: user.id,
+      tenantId: user.organizationId,
       organizationId: user.organizationId,
       role: user.role,
       email: user.email,

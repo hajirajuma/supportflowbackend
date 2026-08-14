@@ -31,18 +31,17 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return false;
     }
 
-    // The tenant middleware creates the AsyncLocalStorage snapshot before
-    // guards run, so it is still live here. Populate it with the JWT user so
-    // RequestContextService.getCurrentUserId()/getCurrentRole() work reliably
-    // for authenticated routes. The snapshot is request-scoped, so mutation is
-    // safe. The user's own organization always wins over the subdomain-resolved
-    // tenant (prevents cross-tenant context poisoning via Host headers).
+    // The bootstrap middleware (main.ts) creates the AsyncLocalStorage
+    // snapshot before guards run, so it is still live here. Populate it with
+    // the authenticated user so RequestContextService.getCurrentUserId() /
+    // getCurrentOrganizationId() work reliably for authenticated routes. The
+    // organizationId comes from JwtStrategy, which re-reads it from the user's
+    // database record — the JWT claim can never smuggle another tenant.
     const request = context.switchToHttp().getRequest();
     const current = this.requestContextService.getCurrent();
     if (current && request.user) {
       current.userId = request.user.userId;
-      current.organizationId =
-        request.user.organizationId ?? current.organizationId;
+      current.organizationId = request.user.organizationId;
       current.role = request.user.role;
     }
 

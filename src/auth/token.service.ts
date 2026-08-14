@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 
 export type JwtPayload = {
   userId: string;
+  /** The tenant the user belongs to. Mirrors organizationId for clarity. */
+  tenantId?: string | null;
   organizationId?: string | null;
   role: string;
   email: string;
