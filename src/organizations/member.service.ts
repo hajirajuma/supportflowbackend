@@ -13,7 +13,7 @@ export class MemberService {
   ) {
     const where: any = {
       organizationId,
-      deactivatedAt: null,
+      deletedAt: null,
     };
 
     if (filters.search) {
@@ -57,7 +57,7 @@ export class MemberService {
       where: {
         id: memberId,
         organizationId,
-        deactivatedAt: null,
+        deletedAt: null,
       },
     });
 
@@ -81,7 +81,7 @@ export class MemberService {
       where: {
         id: memberId,
         organizationId,
-        deactivatedAt: null,
+        deletedAt: null,
       },
     });
 
@@ -106,7 +106,7 @@ export class MemberService {
 
   async removeMember(organizationId: string, memberId: string) {
     const member = await (this.prisma as any).user.findFirst({
-      where: { id: memberId, organizationId, deactivatedAt: null },
+      where: { id: memberId, organizationId, deletedAt: null },
     });
 
     if (!member) {
@@ -116,7 +116,7 @@ export class MemberService {
     await (this.prisma as any).user.update({
       where: { id: memberId },
       data: {
-        deactivatedAt: new Date(),
+        deletedAt: new Date(),
         status: 'INACTIVE',
         organizationId: null,
       },
@@ -135,7 +135,7 @@ export class MemberService {
     dto: SuspendMemberDto,
   ) {
     const member = await (this.prisma as any).user.findFirst({
-      where: { id: memberId, organizationId, deactivatedAt: null },
+      where: { id: memberId, organizationId, deletedAt: null },
     });
 
     if (!member) {
@@ -150,6 +150,48 @@ export class MemberService {
     return {
       success: true,
       message: 'Member status updated successfully',
+      data: null,
+    };
+  }
+
+  async deactivateMember(organizationId: string, memberId: string) {
+    const member = await (this.prisma as any).user.findFirst({
+      where: { id: memberId, organizationId },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found');
+    }
+
+    await (this.prisma as any).user.update({
+      where: { id: memberId },
+      data: { status: 'INACTIVE', deletedAt: new Date() },
+    });
+
+    return {
+      success: true,
+      message: 'Member deactivated successfully',
+      data: null,
+    };
+  }
+
+  async reactivateMember(organizationId: string, memberId: string) {
+    const member = await (this.prisma as any).user.findFirst({
+      where: { id: memberId, organizationId },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found');
+    }
+
+    await (this.prisma as any).user.update({
+      where: { id: memberId },
+      data: { status: 'ACTIVE', deletedAt: null },
+    });
+
+    return {
+      success: true,
+      message: 'Member reactivated successfully',
       data: null,
     };
   }

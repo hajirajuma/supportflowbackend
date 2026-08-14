@@ -116,9 +116,7 @@ export class InvitationService {
     const data = invitations.map((inv: any) => ({
       ...inv,
       role: inv.role?.toLowerCase(),
-      status: inv.acceptedAt
-        ? 'accepted'
-        : inv.status?.toLowerCase(),
+      status: inv.acceptedAt ? 'accepted' : inv.status?.toLowerCase(),
     }));
 
     return {
@@ -225,7 +223,7 @@ export class InvitationService {
 
     const organization = await (this.prisma as any).organization.findUnique({
       where: { id: invitation.organizationId },
-      select: { name: true, subdomain: true },
+      select: { name: true },
     });
 
     return {
@@ -236,7 +234,6 @@ export class InvitationService {
         email: invitation.email,
         role: invitation.role?.toLowerCase(),
         organizationName: organization?.name ?? null,
-        subdomain: organization?.subdomain ?? null,
         expiresAt: invitation.expiresAt,
         invitedBy: invitation.invitedBy
           ? {
@@ -297,12 +294,12 @@ export class InvitationService {
     });
 
     // The invited user stays bound to the inviting organization (its id is
-    // set above), and the success payload carries the organization's name and
-    // subdomain so the frontend can send the user to that exact tenant's
-    // login page — never another organization's.
+    // set above, and comes from the invitation, never from the client). The
+    // success payload carries the organization's name so the frontend can
+    // welcome the user — login happens on the shared application URL.
     const organization = await (this.prisma as any).organization.findUnique({
       where: { id: invitation.organizationId },
-      select: { name: true, subdomain: true },
+      select: { name: true },
     });
 
     return {
@@ -316,7 +313,6 @@ export class InvitationService {
         role: user.role,
         organizationId: user.organizationId,
         organizationName: organization?.name ?? null,
-        subdomain: organization?.subdomain ?? null,
       },
     };
   }

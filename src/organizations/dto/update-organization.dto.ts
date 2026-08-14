@@ -1,11 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class UpdateOrganizationDto {
   @ApiProperty({ example: 'SupportFlow' })
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiProperty({ example: 'We build support software' })
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @ApiProperty({ example: 'https://supportflow.com' })
   @IsOptional()
@@ -18,19 +23,30 @@ export class UpdateOrganizationDto {
   @IsString()
   timezone?: string;
 
-  @ApiProperty({ example: 'en-US' })
+  @ApiProperty({ example: 'en' })
   @IsOptional()
   @IsString()
-  locale?: string;
+  language?: string;
+
+  @ApiProperty({ example: 'support@supportflow.com' })
+  @IsOptional()
+  @IsEmail()
+  contactEmail?: string;
+
+  @ApiProperty({ example: '+1 555 123 4567' })
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
 
   @ApiProperty({ example: '123 Market Street' })
   @IsOptional()
   @IsString()
   address?: string;
 
+  // Backwards-compatible aliases used by other clients.
   @ApiProperty({ example: 'support@supportflow.com' })
   @IsOptional()
-  @IsString()
+  @IsEmail()
   supportEmail?: string;
 
   @ApiProperty({ example: '+1 555 123 4567' })
