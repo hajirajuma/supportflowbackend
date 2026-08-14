@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -48,7 +49,7 @@ export class CreatePlanDto {
     description: 'Monthly price in the plan currency.',
   })
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   priceMonthly?: number;
 
@@ -57,7 +58,7 @@ export class CreatePlanDto {
     description: 'Yearly price in the plan currency.',
   })
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   priceYearly?: number;
 

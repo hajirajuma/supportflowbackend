@@ -47,7 +47,8 @@ export class PlanService {
         code: dto.code,
         name: dto.name,
         description: dto.description,
-        planType: dto.planType ?? 'FREE',
+        // Prisma model field is `type` (the DTO calls it `planType`).
+        type: dto.planType ?? 'FREE',
         priceMonthly: dto.priceMonthly ?? 0,
         priceYearly: dto.priceYearly ?? 0,
         currency: dto.currency ?? 'USD',
@@ -65,7 +66,6 @@ export class PlanService {
         storageLimitBytes: dto.storageLimitBytes
           ? BigInt(dto.storageLimitBytes)
           : 0n,
-        apiRateLimitPerMinute: dto.apiRateLimitPerMinute ?? 0,
         apiMonthlyQuota: dto.apiMonthlyQuota ?? 0,
         features: dto.features ?? {},
       },
@@ -98,6 +98,9 @@ export class PlanService {
       if (value === undefined) continue;
       if (key === 'storageLimitBytes') {
         data[key] = BigInt(value as number);
+      } else if (key === 'planType') {
+        // Prisma model field is `type` (the DTO calls it `planType`).
+        data.type = value;
       } else {
         data[key] = value;
       }

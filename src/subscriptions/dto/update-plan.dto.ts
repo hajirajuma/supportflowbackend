@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -33,13 +34,13 @@ export class UpdatePlanDto {
 
   @ApiPropertyOptional({ example: 59 })
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   priceMonthly?: number;
 
   @ApiPropertyOptional({ example: 590 })
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
   priceYearly?: number;
 
