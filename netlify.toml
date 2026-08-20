@@ -2,9 +2,11 @@
   command = "bash scripts/build-netlify.sh"
   functions = "netlify/functions"
 
-# Pre-built with esbuild, no re-bundling needed
+# Use nft (Node File Trace) bundler — works better with pre-built bundles
+# that have external packages in node_modules
 [functions]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
+  included_files = ["netlify/functions/node_modules/**"]
 
 # Route all API requests to the serverless function
 [[redirects]]
