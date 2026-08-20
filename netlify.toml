@@ -1,0 +1,24 @@
+[build]
+  command = "bash scripts/build-netlify.sh"
+  functions = "netlify/functions"
+
+# Pre-built with esbuild, no re-bundling needed
+[functions]
+  node_bundler = "esbuild"
+
+# Route all API requests to the serverless function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# Health check
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health"
+  status = 200
+
+[[redirects]]
+  from = "/health/*"
+  to = "/.netlify/functions/api/health/:splat"
+  status = 200

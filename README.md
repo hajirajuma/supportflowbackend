@@ -126,7 +126,7 @@ Structured JSON logs via pino (`LOG_LEVEL` to control verbosity).
 
 ## Deployment
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Render, Railway, and Docker instructions,
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Netlify and Docker deployment instructions,
 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for the full environment reference, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design overview.
 The production-readiness audit is recorded in [docs/AUDIT.md](docs/AUDIT.md).

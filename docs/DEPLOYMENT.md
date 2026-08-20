@@ -20,25 +20,39 @@ npm run prisma:seed         # platform admin, plans, permissions, roles, KB cate
 > Run migrations from your CI/CD pipeline before/after deploy — do not run them from the app
 > process at boot in production.
 
-## Render
+## Netlify (Serverless Functions)
 
-`render.yaml` is included; you can use it as a Blueprint, or create a Web Service manually:
+The backend is deployed as a **Netlify Function**. The build uses esbuild to bundle the
+NestJS app into a single serverless function.
 
-- **Runtime:** Node
-- **Build command:** `npm ci && npx prisma generate && npm run build`
-- **Start command:** `node dist/main.js`
-- **Health check path:** `/health/ready`
-- **Environment:** all variables from [ENVIRONMENT.md](ENVIRONMENT.md)
+**Build command:** `bash scripts/build-netlify.sh`
 
-## Railway
+**Environment variables** (set in Netlify dashboard → Site settings → Environment variables):
 
-`railway.json` is included (Nixpacks):
+| Variable | Value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | *(your PostgreSQL connection string)* |
+| `JWT_SECRET` | *(random hex string)* |
+| `JWT_REFRESH_SECRET` | *(random hex string)* |
+| `FRONTEND_URL` | `https://your-frontend.vercel.app` |
+| `API_URL` | `https://your-backend.netlify.app` |
+| `BREVO_API_KEY` | *(your Brevo key)* |
+| `EMAIL_FROM` | `SupportFlow <no-reply@yourdomain.com>` |
+| `SUPABASE_URL` | *(your Supabase URL)* |
+| `SUPABASE_PUBLISHABLE_KEY` | *(your Supabase anon key)* |
+| `SUPABASE_SECRET_KEY` | *(your Supabase service role key)* |
+| `SUPABASE_BUCKET` | `supportflow` |
+| `PAYCHANGU_ENV` | `sandbox` or `live` |
+| `PAYCHANGU_PUBLIC_KEY` | *(your PayChangu key)* |
+| `PAYCHANGU_SECRET_KEY` | *(your PayChangu key)* |
 
-- Build: `npm ci && npx prisma generate && npm run build`
-- Start: `node dist/main.js`
-- Healthcheck: `/health/ready`
+**Routing:** The `netlify.toml` routes all `/api/*` requests to the serverless function.
 
-Add a PostgreSQL plugin and bind `DATABASE_URL`; add the remaining env vars via the dashboard.
+**Limitations:**
+- Cold starts may take 10-20 seconds after idle
+- WebSocket support not available (use external WebSocket provider)
+- 10-second timeout on free tier (26s on paid)
 
 ## Docker
 

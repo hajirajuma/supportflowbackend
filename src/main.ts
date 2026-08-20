@@ -26,14 +26,13 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  app.enableCors();
   const config = app.get(ConfigService);
   const logger = app.get(LoggerService);
   app.useLogger(logger);
 
   const requestContextService = app.get(RequestContextService);
 
-  // Behind reverse proxies (Render/Railway), honor X-Forwarded-For for
+  // Behind reverse proxies, honor X-Forwarded-For for
   // request.ip so audit/security logging reflects the real client.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 

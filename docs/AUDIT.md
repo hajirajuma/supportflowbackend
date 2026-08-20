@@ -76,7 +76,7 @@ string-enum nominal typing, missing DTO fields, wrong decorator import).
 ## CI/CD & deployment
 
 - GitHub Actions workflow: prisma validate, lint, build, unit + e2e tests.
-- Dockerfile (multi-stage, non-root), `.dockerignore`, `render.yaml`, `railway.json`.
+- Dockerfile (multi-stage, non-root), `.dockerignore`, `netlify.toml`.
 
 ## Operations documentation
 
