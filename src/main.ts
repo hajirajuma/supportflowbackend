@@ -61,65 +61,51 @@ async function bootstrap() {
   // Response compression
   app.use(compression());
 
-  // CORS — FRONTEND_URL may be a comma-separated list of allowed origins.
-  const frontendUrls = String(config.get('FRONTEND_URL') ?? '')
-    .split(',')
-    .map((s: string) => s.trim())
-    .filter(Boolean);
+  // CORS
+const frontendUrls = String(config.get('FRONTEND_URL') ?? '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/$/, ''))
+  .filter(Boolean);
 
-  app.enableCors({
-    origin: frontendUrls.length ? frontendUrls : true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
-  });
+const allowedOrigins = [
+  'https://supportflowm-one.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  ...frontendUrls,
+].filter((origin, index, array) => array.indexOf(origin) === index);
 
-  app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+app.enableCors({
+  origin: (origin, callback) => {
+    // Allow requests with no Origin header
+    // (health checks, server-to-server requests, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-  // Global validation
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-      forbidUnknownValues: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+    const normalizedOrigin = origin.replace(/\/$/, '');
 
-  // Health endpoints stay at the root so orchestrators don't need the prefix.
-  app.setGlobalPrefix('api/v1', { exclude: ['health', 'health/(.*)'] });
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-  // Swagger (never exposed in production)
-  if (config.get('NODE_ENV') !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('SupportFlow API')
-      .setDescription('SupportFlow SaaS Backend')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .addServer('/api/v1')
-      .build();
+    logger.warn(
+      `CORS blocked origin: ${origin}`,
+      'CORS',
+    );
 
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
-  }
-
-  // Graceful shutdown for in-flight requests + DB connection draining
-  app.enableShutdownHooks();
-
-  const port = config.get<number>('PORT') ?? 3001;
-  await app.listen(port);
-
-  logger.log(
-    `Server running on http://localhost:${port} (env: ${config.get('NODE_ENV') ?? 'development'})`,
-    'Bootstrap',
-  );
-}
-
-bootstrap().catch((error) => {
-  console.error('Fatal error during bootstrap:', error);
-  process.exit(1);
+    return callback(new Error('Not allowed by CORS'), false);
+  },
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'Origin',
+    'X-Requested-With',
+    'x-request-id',
+  ],
+  exposedHeaders: ['x-request-id'],
+  optionsSuccessStatus: 204,
 });
+}
