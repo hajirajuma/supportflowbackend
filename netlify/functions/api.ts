@@ -22,6 +22,35 @@ import { RequestContextService } from '../../dist/src/request-context/request-co
 
 let cachedHandler: any;
 
+/**
+ * Resolve the allowed CORS origin from the FRONTEND_URL env var.
+ * Falls back to `true` (allow all) when the variable is unset so the
+ * function never crashes due to a missing CORS configuration.
+ */
+function getCorsOrigin(): string | string[] | true {
+  const raw = process.env.FRONTEND_URL ?? '';
+  const urls = raw
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+  return urls.length ? urls : true;
+}
+
+function corsHeaders(origin: string | string[] | true): Record<string, string> {
+  const allowed =
+    origin === true
+      ? '*'
+      : Array.isArray(origin)
+        ? origin.join(', ')
+        : origin;
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-request-id',
+  };
+}
+
 async function bootstrap() {
   const expressApp = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
@@ -84,8 +113,42 @@ async function bootstrap() {
 }
 
 export const handler = async (event: any, context: any) => {
-  if (!cachedHandler) {
-    cachedHandler = await bootstrap();
+  // Always handle CORS preflight BEFORE touching NestJS so that even
+  // a cold-start failure returns proper headers and the browser isn't
+  // left with a misleading CORS error.
+  const corsOrigin = getCorsOrigin();
+  const headers = corsHeaders(corsOrigin);
+
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204,
+      headers,
+      body: '',
+    };
   }
-  return cachedHandler(event, context);
+
+  try {
+    if (!cachedHandler) {
+      cachedHandler = await bootstrap();
+    }
+    const response = await cachedHandler(event, context);
+    // Merge our CORS headers into every response so the browser is
+    // always satisfied, even if NestJS CORS missed an edge case.
+    response.headers = { ...headers, ...(response.headers ?? {}) };
+    return response;
+  } catch (err) {
+    console.error('Netlify function bootstrap/handler error:', err);
+    return {
+      statusCode: 500,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        statusCode: 500,
+        message: 'Internal server error',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      }),
+    };
+  }
 };

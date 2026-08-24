@@ -75,11 +75,26 @@ const allowedOrigins = [
 ].filter((origin, index, array) => array.indexOf(origin) === index);
 
 app.enableCors({
-  origin: [
-    'https://supportflowm-one.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:5173',
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no Origin header
+    // (health checks, server-to-server requests, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const normalizedOrigin = origin.replace(/\/$/, '');
+
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      return callback(null, true);
+    }
+
+    logger.warn(
+      `CORS blocked origin: ${origin}`,
+      'CORS',
+    );
+
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [

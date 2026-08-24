@@ -47,7 +47,7 @@ export default Joi.object({
   PAYCHANGU_RETURN_URL: Joi.string().uri().optional(),
   PAYCHANGU_CALLBACK_URL: Joi.string().uri().optional(),
 
-  FRONTEND_URL: Joi.string().required(),
+  FRONTEND_URL: Joi.string().optional().allow(''),
 
   SUPABASE_URL: Joi.string().uri().required(),
   SUPABASE_PUBLISHABLE_KEY: Joi.string().required(),
