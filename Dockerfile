@@ -14,20 +14,21 @@ COPY . .
 RUN npx prisma generate
 RUN NODE_OPTIONS="--max-old-space-size=1536" npm run build
 
+# Find main.js wherever it landed and copy it to /app/dist/main.js
+RUN cp $(find dist -name "main.js" -not -path "*/node_modules/*" | head -1) dist/main.js || true
+
 # ---------- Production stage ----------
 FROM node:22-alpine AS production
 
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Non-root user for container hardening
 RUN addgroup -S app && adduser -S app -G app
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
-# Install production deps only (the Prisma engine/adapter is a runtime dep)
 RUN npm ci --omit=dev && npx prisma generate
 
 COPY --from=build /app/dist ./dist
