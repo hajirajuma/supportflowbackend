@@ -14,9 +14,6 @@ COPY . .
 RUN npx prisma generate
 RUN NODE_OPTIONS="--max-old-space-size=1536" npm run build
 
-# Find main.js wherever it landed and copy it to /app/dist/main.js
-RUN cp $(find dist -name "main.js" -not -path "*/node_modules/*" | head -1) dist/main.js || true
-
 # ---------- Production stage ----------
 FROM node:22-alpine AS production
 
@@ -37,4 +34,4 @@ USER app
 
 EXPOSE 3001
 
-CMD ["node", "--max-old-space-size=512", "dist/main.js"]
+CMD ["node", "--max-old-space-size=512", "dist/src/main.js"]
