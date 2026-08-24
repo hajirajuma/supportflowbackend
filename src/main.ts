@@ -2,8 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import helmet from 'helmet';
-import compression from 'compression';
 import { randomUUID } from 'node:crypto';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -37,9 +35,7 @@ async function bootstrap() {
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   // Request-context bootstrap: captures a requestId and exposes the
-  // AsyncLocalStorage scope for the whole request lifecycle. User/tenant data
-  // is populated later by JwtAuthGuard from the authenticated user's database
-  // record — there is no host-header/subdomain tenant resolution.
+  // AsyncLocalStorage scope for the whole request lifecycle.
   app.use((req, res, next) => {
     const request = req;
 
@@ -55,57 +51,100 @@ async function bootstrap() {
     );
   });
 
-  // Security headers
-  app.use(helmet());
-
-  // Response compression
-  app.use(compression());
-
   // CORS
-const frontendUrls = String(config.get('FRONTEND_URL') ?? '')
-  .split(',')
-  .map((url) => url.trim().replace(/\/$/, ''))
-  .filter(Boolean);
+  const frontendUrls = String(config.get('FRONTEND_URL') ?? '')
+    .split(',')
+    .map((url) => url.trim().replace(/\/$/, ''))
+    .filter(Boolean);
 
-const allowedOrigins = [
-  'https://supportflowm-one.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:5173',
-  ...frontendUrls,
-].filter((origin, index, array) => array.indexOf(origin) === index);
+  const allowedOrigins = [
+    'https://supportflowm-one.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    ...frontendUrls,
+  ].filter((origin, index, array) => array.indexOf(origin) === index);
 
-app.enableCors({
-  origin: (origin, callback) => {
-    // Allow requests with no Origin header
-    // (health checks, server-to-server requests, etc.)
-    if (!origin) {
-      return callback(null, true);
-    }
+  app.enableCors({
+    origin: (origin, callback) => {
+      // Allow requests with no Origin header
+      // (health checks, server-to-server requests, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
 
-    const normalizedOrigin = origin.replace(/\/$/, '');
+      const normalizedOrigin = origin.replace(/\/$/, '');
 
-    if (allowedOrigins.includes(normalizedOrigin)) {
-      return callback(null, true);
-    }
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
 
-    logger.warn(
-      `CORS blocked origin: ${origin}`,
-      'CORS',
-    );
+      logger.warn(
+        `CORS blocked origin: ${origin}`,
+        'CORS',
+      );
 
-    return callback(new Error('Not allowed by CORS'), false);
-  },
-  credentials: true,
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'Origin',
-    'X-Requested-With',
-    'x-request-id',
-  ],
-  exposedHeaders: ['x-request-id'],
-  optionsSuccessStatus: 204,
-});
+      return callback(new Error('Not allowed by CORS'), false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
+      'x-request-id',
+    ],
+    exposedHeaders: ['x-request-id'],
+    optionsSuccessStatus: 204,
+  });
+
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new TransformInterceptor());
+
+  // Global validation
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
+
+  // Health endpoints stay at the root so orchestrators don't need the prefix.
+  app.setGlobalPrefix('api/v1', { exclude: ['health', 'health/(.*)'] });
+
+  // Swagger (never exposed in production)
+  if (config.get('NODE_ENV') !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('SupportFlow API')
+      .setDescription('SupportFlow SaaS Backend')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addServer('/api/v1')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, document);
+  }
+
+  // Graceful shutdown for in-flight requests + DB connection draining
+  app.enableShutdownHooks();
+
+  const port = config.get<number>('PORT') ?? 3001;
+  await app.listen(port);
+
+  logger.log(
+    `Server running on http://localhost:${port} (env: ${config.get('NODE_ENV') ?? 'development'})`,
+    'Bootstrap',
+  );
 }
+
+bootstrap().catch((error) => {
+  console.error('Fatal error during bootstrap:', error);
+  process.exit(1);
+});
